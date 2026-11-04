@@ -159,6 +159,8 @@ source-only until device rendering is checked. macOS remains Apple Silicon/macOS
 | Android exact runtime advisory lookup | Zero public GitHub advisory matches for Kotlin stdlib 2.2.10 and annotations 13.0; scoped lookup only, not a full audit |
 | Android APK compilation/lint/device | NOT RUN, Android SDK absent on this host |
 | Apple compilation/signed sandbox/device | NOT RUN, Xcode and Apple devices unavailable on this host |
+| Apple unsigned compile (macOS host, Xcode 27.1, iOS SDK 27.1) | PASS, `build-probes.sh` (iphoneos27.1 and `--simulator` iphonesimulator27.1) built iOS and macOS Phase 0 targets with no compiler warnings, unsigned; fixed `accessibilityContrast` to `colorSchemeContrast`. Signed sandbox, runtime and device behavior still NOT RUN |
+| iPhone 15 Pro install/launch (AreaTM team development signing) | PASS, signed Debug build installed and launched; screenshot shows the Phase 0 screen (public-string notice, test-ended state, Secure Enclave "reported, unverified"). A Windows run at Medium RID reported `SYNTHETIC_GATT_WRITE_READ_PASS` at about the same time, but peer identity is unverified (public UUID). Notifications, MTU, fragmentation, accessibility, Reduce Transparency/Increase Contrast and Duo layout NOT RUN |
 | Liquid Glass appearance/accessibility/Duo folding | NOT RUN; source checks are not visual/device evidence |
 | Actual cross-OS GATT exchange/notifications/MTU/disconnect | NOT RUN |
 | New GitHub Actions Windows/static/shell-fixture checks | Prepared locally; not pushed or executed remotely |
