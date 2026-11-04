@@ -48,6 +48,14 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
   access controls remote retrieval; existing local copies remain readable to any
   OS account/process with filesystem permission. Never claim otherwise.
 
+## Lead branch and succession (owner decision D015)
+
+- Windows `main` is the lead (reference) branch. Other platforms align to its core,
+  docs/PROTOCOL.md and docs/DECISIONS.md; on conflict the Windows side wins.
+- If the lead is unavailable: 1) Windows, 2) cloud session, 3) macOS session. If none is
+  available, wait and make no new decisions. Android and iOS are not lead candidates.
+- Coordination only; it never weakens security policy or replaces owner approval.
+
 ## Scope and non-negotiable security policy
 
 - AreaTM; public Apache-2.0 project; website https://key.minori.in.
