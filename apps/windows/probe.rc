@@ -14,11 +14,19 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "CompanyName", "AreaTM\0"
+#ifdef KAGILINK_GUI
+            VALUE "FileDescription", "KagiLink Windows diagnostic GUI\0"
+#else
             VALUE "FileDescription", "KagiLink Phase 0 synthetic-only probe\0"
+#endif
             VALUE "FileVersion", "0.0.0-phase0\0"
             VALUE "InternalName", "KagiLinkPhase0Probe\0"
             VALUE "LegalCopyright", "Copyright 2026 AreaTM contributors\0"
+#ifdef KAGILINK_GUI
+            VALUE "OriginalFilename", "kagilink.exe\0"
+#else
             VALUE "OriginalFilename", "kagilink-phase0-probe.exe\0"
+#endif
             VALUE "ProductName", "KagiLink\0"
             VALUE "ProductVersion", "0.0.0-phase0\0"
         END

@@ -33,3 +33,6 @@ jobs:
       - name: Check CLI without scanning or injecting input
         shell: pwsh
         run: ./tests/windows/test-probe.ps1
+      - name: Check GUI subprocess lifecycle with synthetic fixtures
+        shell: pwsh
+        run: ./tests/windows/test-gui-runner.ps1

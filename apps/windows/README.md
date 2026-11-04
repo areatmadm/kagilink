@@ -1,9 +1,43 @@
-# KagiLink Windows Phase 0 feasibility probe
+# KagiLink Windows Phase 0 diagnostic GUI and CLI
 
 C++20/C++/WinRT standalone EXE; static MSVC runtime, `asInvoker`, `uiAccess=false`.
 Rejects non-medium-integrity input tests. Read-only inventory can run at other
 integrities but reports diagnostic-only and exits 2. No installer, service, driver, elevation,
 clipboard, vault, PAKE, arbitrary payload or arbitrary target input.
+
+## Diagnostic window
+
+Build with `apps/windows/build-probe.ps1`, then double-click
+`target/phase0/kagilink.exe`. Keep `kagilink-phase0-probe.exe` beside it. The GUI
+opens a persistent native Win32 window without a console and starts no diagnostic
+automatically. It is a Phase 0 research interface, not a credential receiver product.
+
+- `어댑터 확인` runs the read-only BLE/TPM inventory and shows its result.
+- `BLE 연결 시험` explicitly starts the separate fixed-public-value GATT test.
+- `중지` stops the current diagnostic. Closing the window also stops its child.
+
+The window uses the same Glass visual language as the Android/Apple Phase 0 screens:
+luminous teal backdrop, frosted dark panels with a reflected rim and pill glass
+controls, drawn with GDI+ (no extra runtime dependency). It switches to flat system
+colors in Windows high-contrast mode. The look is cosmetic; behaviour is unchanged.
+
+The window presents Korean status and a read-only public diagnostic transcript.
+`상세 결과 보기` toggles the diagnostic-code area. The visible GUI inventory,
+start/busy/stop/restart and no-sender flows have been exercised; see implementation
+status for the exact evidence and remaining DPI/accessibility/device tests.
+It has no password/code field, vault, pairing, arbitrary command or input-injection
+control. It can start only the fixed sibling probe with `--inventory` or `--ble-test`;
+the CLI's `--self-input` experiment is deliberately not exposed in the GUI.
+The original CLI and its Medium-integrity BLE/input guards are preserved.
+
+The GUI polls its child without blocking the message loop, bounds captured output
+to 16 KiB and supervises it with a 70-second outer limit. The child's BLE deadline
+remains 60 seconds; the supervisor does not extend it. Cancel/close uses a
+kill-on-close job. Physical radio/ATT cancellation timing still needs device tests.
+No result is written to a log file. Current build, direct-window and screenshot
+evidence is recorded in [implementation status](../../docs/IMPLEMENTATION_STATUS.md).
+
+## Command-line probe
 
 `--ble-test` is a separate opt-in, unauthenticated public diagnostic GATT exchange,
 not production transport; see [cross-OS instructions](../../docs/PHASE0_BLE_PROBE.md).

@@ -12,3 +12,7 @@ $buildCommand = 'call "{0}" -arch=x64 -host_arch=x64 >nul && rc /nologo /fo "{1}
 & $env:ComSpec /d /s /c $buildCommand
 if ($LASTEXITCODE -ne 0) { throw "Windows probe build failed ($LASTEXITCODE)." }
 Write-Output "Built $outputPath\kagilink-phase0-probe.exe"
+$guiCommand = 'call "{0}" -arch=x64 -host_arch=x64 >nul && rc /nologo /d KAGILINK_GUI /fo "{1}\gui.res" "{2}\probe.rc" && cl /nologo /std:c++20 /EHsc /W4 /WX /MT /utf-8 /DUNICODE /D_UNICODE /Fo"{1}\gui.obj" /Fe"{1}\kagilink.exe" "{2}\gui.cpp" "{1}\gui.res" /link /SUBSYSTEM:WINDOWS user32.lib gdi32.lib gdiplus.lib comctl32.lib dwmapi.lib uxtheme.lib /MANIFEST:EMBED /MANIFESTINPUT:"{2}\gui.manifest"' -f $devCommand, $outputPath, $PSScriptRoot
+& $env:ComSpec /d /s /c $guiCommand
+if ($LASTEXITCODE -ne 0) { throw "Windows GUI build failed ($LASTEXITCODE)." }
+Write-Output "Built $outputPath\kagilink.exe (GUI; keep the probe EXE beside it)"

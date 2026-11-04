@@ -11,6 +11,14 @@ replayed or interrupted; success is not peer identity, proximity or trust eviden
 It must never accept credentials or forward data into input APIs. Transient routing
 identifiers are not logged. The Apple peripheral prototype cannot immediately
 observe all disconnects; its public state expires and is not production cleanup.
+
+The Windows diagnostic GUI is not a new trust boundary for secret handling: it
+contains no secrets and invokes only two fixed actions in its sibling CLI, without
+a shell. Its public output is bounded, and cancel/close/deadline terminates the
+supervised child. A compromised or replaced local executable/receiving OS remains
+outside any integrity claim. A responsive window, read-only result or screenshot
+does not demonstrate authenticated transfer, hardware protection or safe input.
+
 Liquid Glass surfaces and hardware capability labels are visual information only;
 they must never imply verified peer identity, encryption or a protected session.
 Reduced transparency, readable contrast and visible terminal errors are required
