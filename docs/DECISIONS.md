@@ -200,3 +200,16 @@ independent review of the exact locked versions exists, and Phase 0 exit criteri
 stays open. Verification (local, 2026-11-04): 29 transport unit tests and 38 handshake tests pass (debug
 build); fmt and clippy -D warnings clean. This is synthetic-test evidence only; no audit,
 fuzzing, side-channel or memory review has been done.
+
+## D015 — Lead branch and succession, 2026-11-04
+
+Owner instruction: the Windows session's `main` is the lead (reference) branch of KagiLink.
+Other platform work aligns to Windows `main` (core, `docs/PROTOCOL.md`, this file); on
+conflict the Windows side wins.
+
+Succession when the lead is unavailable: 1) Windows, 2) cloud session, 3) macOS session.
+If none of them is available, work waits and makes no new decisions. Android and iOS are
+not lead candidates.
+
+This governs coordination only. It does not change any security policy, scope, phase gate
+or the need for explicit owner approval in AGENTS.md.
