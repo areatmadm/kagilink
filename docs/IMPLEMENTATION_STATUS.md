@@ -60,6 +60,15 @@ test is still required; --self-input can briefly take focus and is opt-in only.
 Tests not explicitly recorded as run are NOT RUN. Synthetic model success is not
 cryptographic evidence. No production memory zeroization has been implemented.
 
+## CPace evaluation (Phase 1 entry work) — 2026-11-04
+
+Decision D013 replaced SPAKE2 with CPace. `core/cpace-eval` runs `pakery-cpace` 0.6.2
+(Ristretto255 + SHA-512) against draft-irtf-cfrg-cpace-21 Appendix B.3: 7 conformance
+tests PASS, plus existing 11 model tests; fmt and clippy -D warnings PASS. This is
+candidate evidence only. Phase 0 exit criterion 3 is NOT closed: no audit, no
+side-channel/erasure review, no cargo audit/deny, no cross-language vectors. Phase 1
+production code remains gated; real-secret transfer stays disabled.
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;
@@ -68,7 +77,7 @@ cryptographic evidence. No production memory zeroization has been implemented.
    MTU/disconnect/permission/radio-off tests; identify adapter/OS configurations.
 3. Verify input safety separately for ordinary windows, CredUI and mstsc. Current
    official restrictions prevent claiming supported non-elevated credential input.
-4. Resolve audited/reviewed SPAKE2 suite and memory lifecycle, then freeze vectors.
+4. Resolve audited/reviewed CPace suite (D013) and memory lifecycle, then freeze vectors.
 5. Only after Phase 0 exit, implement security core and native hardware adapters.
 
 No real credentials have been used. No production memory-clearing guarantees,

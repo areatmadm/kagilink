@@ -65,7 +65,7 @@ API result and synthetic outcome. Avoid collecting usernames or device addresses
 
 ## Phase 1+ mandatory tests
 
-SPAKE2 public vectors, wrong code, invalid group values, failed mutual confirmation,
+CPace public vectors (draft Appendix B), wrong code, invalid group values, failed mutual confirmation,
 context/role/version/purpose/identity tamper; HKDF/AES known-answer vectors, tag
 tamper, prior session replay, directional key separation, counter overflow and nonce
 uniqueness; global rate limit; disconnect/crash/cancel/drop/FFI cleanup; hardware API

@@ -58,8 +58,9 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
 - No clipboard, plaintext files, debug secret output, privilege escalation,
   UIPI/UAC bypass, security desktop access, drivers, services or security disabling.
 - Use reviewed cryptographic libraries, not custom cryptography. Six decimal
-  digits are a PAKE password, never a raw encryption key. Require SPAKE2, explicit
-  mutual key confirmation, HKDF, AES-256-GCM, transcript binding, replay defense,
+  digits are a PAKE password, never a raw encryption key. Require CPace (CFRG-recommended
+  balanced PAKE; owner-approved 2026-11-04, replaces SPAKE2; SPAKE2 only by a new
+  approval), explicit mutual key confirmation, HKDF, AES-256-GCM, transcript binding, replay defense,
   nonce uniqueness, bounded BLE framing and fail-closed session lifecycle.
 - Code TTL 60 seconds, maximum three failures, discard at the limit. Codes,
   ephemeral keys and session keys must not be reused. Reconnect creates a fresh

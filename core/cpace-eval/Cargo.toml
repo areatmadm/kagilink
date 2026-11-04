@@ -1,0 +1,16 @@
+[package]
+name = "areatm-cpace-eval"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "KagiLink CPace candidate evaluation: draft vector conformance tests only; not a product component"
+
+[dev-dependencies]
+pakery-core = "=0.6.2"
+pakery-cpace = "=0.6.2"
+pakery-crypto = { version = "=0.6.2", default-features = false, features = ["ristretto255"] }
+rand_core = "0.10"

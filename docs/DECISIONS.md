@@ -114,3 +114,52 @@ nonblocking message-loop polling. Supervise the child with a kill-on-close job
 and a 70-second outer deadline; the child's 60-second BLE deadline remains unchanged.
 This provides a reviewable Phase 0 interface, not a Phase 4 product, secret-transfer
 authorization or proof of peer identity/hardware/target-input safety.
+
+## D012 — Safety-first SPAKE2 selection criteria, 2026-11-04 (proposed)
+
+Owner direction: aim for the safest design, not government certification. KCMVP
+(Korea) and FIPS 140-3/CNSA (US) validation are explicit non-goals for now; revisit
+only by a new decision. Searches found no NIS or NSA/NIST recommendation of SPAKE2
+or any PAKE, so no regulator guidance overrides the project policy.
+
+No audited SPAKE2 library was found (DEPENDENCY_REVIEW.md, 2026-11-04). Therefore:
+
+1. Do not enable real-secret transfer on any unaudited PAKE. Until an independent
+   review of the exact locked versions exists, Phase 1 code is synthetic-data only.
+2. Prefer RFC 9382 (P-256, SHA-256, HKDF, HMAC) so correctness can be checked against
+   the RFC's published vectors. The Ed25519 python-spake2 variant has no RFC vectors.
+3. Require two independent implementations to agree with the RFC vectors and with each
+   other (for example a Rust crate and a separate reference) before selection.
+4. Do not write our own PAKE. Wrap a reviewed crate; keep our code to framing,
+   transcript binding, rate limits, lifecycle and zeroization.
+5. Layer defenses so a PAKE flaw alone cannot reveal a secret: hardware-bound device
+   keys, explicit per-transfer approval, one-time permission and AES-256-GCM under
+   keys derived from the confirmed session.
+6. Fuzz message parsing and framing, run cargo audit/deny on the full lock, and
+   obtain external review of the PAKE integration before Phase 3 hardware work
+   treats it as production.
+
+Status: proposed pending owner confirmation of the library and suite; the choice of
+native versus shared Rust core remains open. The SPAKE2 premise is under review: the
+CFRG recommended CPace instead (see DEPENDENCY_REVIEW.md, CPace vs SPAKE2). Any switch
+needs explicit owner approval because AGENTS.md currently requires SPAKE2.
+
+## D013 — Use CPace instead of SPAKE2, 2026-11-04
+
+Owner approved replacing the SPAKE2 requirement with CPace (draft-irtf-cfrg-cpace,
+state "Sent to the RFC Editor"; CFRG-recommended balanced PAKE). Reasons: standards
+position, published proofs, per-suite test vectors, smaller state machine
+(DEPENDENCY_REVIEW.md, CPace vs SPAKE2). SPAKE2/RFC 9382 is no longer the required
+protocol; reintroducing it needs a new approval. D012 safety-first rules continue to
+apply, with CPace in place of SPAKE2 (RFC 9382 vectors become draft Appendix B vectors).
+
+Constraints unchanged: code TTL 60 s, three failures, one-time code, explicit mutual
+key confirmation (added by KagiLink because CPace has none), HKDF, AES-256-GCM,
+transcript binding, synthetic data only until independent review. Candidate crate
+`pakery-cpace` with the draft's CPACE-RISTR255-SHA512 suite (section 8.3, Appendix B.3).
+Correction (same day): the earlier preference for P-256 was withdrawn because
+`pakery-cpace`'s P-256 suite uses SHA-512 and its own DSI, i.e. it is NOT the draft's
+CPACE-P256_XMD:SHA-256_SSWU_NU_ suite and the draft's positive vectors do not apply to
+it (upstream states this in its tests). Ristretto255 is a prime-order group, so
+no cofactor or invalid-curve handling is needed. Selection remains conditional on the
+open gates in DEPENDENCY_REVIEW.md (external review, side-channel/erasure review).

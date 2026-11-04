@@ -22,10 +22,13 @@ transcript/key schedule; do not replace RFC internals with a home-made hash.
 Reject unsupported versions/suites instead of downgrade. Receiver identity/TPM
 labels are authenticated peer claims unless separately backed by verified evidence.
 
-RFC 9382 compliance is a selection gate: an implementation named spake2 is not
-automatically compatible with its group/encoding/key-confirmation vectors. The
-selected reviewed suite, full encoding and golden vectors must be recorded before
-cross-platform implementation. Do not substitute SPAKE2+ without approved design.
+PAKE is CPace (draft-irtf-cfrg-cpace; D013), not SPAKE2. Conformance to the draft's
+Appendix B vectors is a selection gate: a crate named cpace is not automatically
+compatible with the latest draft's group/encoding vectors. The selected suite,
+full encoding and golden vectors must be recorded before cross-platform
+implementation. CPace has no built-in key confirmation; KagiLink adds explicit
+mutual confirmation (HKDF-derived keys, MAC over the transcript). Do not
+substitute SPAKE2, SPAKE2+ or OPAQUE without approved design.
 
 After verified mutual confirmation, derive distinct directional AES-256 keys and
 confirmation/control keys using HKDF with domain-separated labels and context.
@@ -64,6 +67,7 @@ cannot mean password accepted or RDP connected. ACK loss must not retry input.
 
 ## References
 
-- [SPAKE2 RFC 9382](https://www.rfc-editor.org/rfc/rfc9382.html)
+- [CPace draft-irtf-cfrg-cpace](https://datatracker.ietf.org/doc/draft-irtf-cfrg-cpace/)
+- [SPAKE2 RFC 9382](https://www.rfc-editor.org/rfc/rfc9382.html) (not selected; D013)
 - [HKDF RFC 5869](https://www.rfc-editor.org/rfc/rfc5869.html)
 - [AES-GCM SP 800-38D](https://csrc.nist.gov/pubs/sp/800/38/d/final)
