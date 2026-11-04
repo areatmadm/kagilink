@@ -14,12 +14,12 @@ work. Agent policy is defined only in ../AGENTS.md. This table maps acceptance e
 | R06 | Approval every transfer, single use, no reuse | Synthetic model only; native approval NOT IMPLEMENTED |
 | R07 | iOS/iPadOS hardware/user auth/tamper block | Actual Secure Enclave operations and device matrix; NOT RUN |
 | R08 | Android StrongBox required, no fallback | Feature + actual key security level/use, negative devices; NOT RUN |
-| R09 | Windows portable normal-user BLE/TPM or labelled RAM | Probe and fixed-value diagnostic client built; normal-user device GATT/key use NOT RUN |
+| R09 | Windows portable normal-user BLE/TPM or labelled RAM | Existing probe plus diagnostic GUI shell; normal-user inventory observed, device GATT/key use NOT RUN |
 | R10 | macOS sender/receiver, required hardware | Native diagnostic source added; Apple build/hardware/device tests NOT RUN |
 | R11 | Transient secrets, zeroize/locking, no leaks | Full error/drop/FFI and memory review; NOT IMPLEMENTED |
 | R12 | Direct entry/autofill + encrypted app vault | Registration/use/change/delete/loss tests; NOT IMPLEMENTED |
 | R13 | Safe input/RDP, fail closed without bypass | Ordinary owned-window test separate from CredUI/mstsc; pending |
-| R14 | Accessible native sender/receiver screens | Diagnostic mobile/Apple UI source only; product UI/accessibility tests NOT RUN |
+| R14 | Accessible native sender/receiver screens | Windows diagnostic GUI and mobile/Apple UI sources; product UI/full accessibility tests NOT RUN |
 | R15 | Apache-2.0 public source; signed/provenanced releases | Release checklist; no publication authorized |
 | R16 | Common instructions + project-local AI memory | AGENTS.md + shared/ai/ references established |
 | R17 | Android 14+/latest stable SDK; iOS/iPadOS 18+/SDK 27.1 for iPhone Duo | Build configuration/source checks; SDK compilation and device support NOT RUN |

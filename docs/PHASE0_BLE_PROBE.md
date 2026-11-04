@@ -41,10 +41,14 @@ unverified; StrongBox/Enclave key operations remain a separate Phase 0 gate.
 
 ## Targets and first run
 
-1. Windows: build `apps/windows/build-probe.ps1`. On a normal Medium-integrity
-   desktop run `target/phase0/kagilink-phase0-probe.exe --ble-test`. Low/elevated
-   processes refuse before scanning. GATT consent/packaging may block this console
-   context; record the failure and do not elevate, pair automatically or bypass it.
+1. Windows: build `apps/windows/build-probe.ps1`, keep both generated EXEs together,
+   and double-click `target/phase0/kagilink.exe` for the native diagnostic window.
+   Choose `어댑터 확인` or `BLE 연결 시험`; no test starts on launch. `중지` and window
+   close stop the supervised child. The CLI remains available as
+   `target/phase0/kagilink-phase0-probe.exe --ble-test`. The BLE test requires normal
+   Medium integrity; Low/elevated child processes refuse before scanning. GATT
+   consent/packaging may still block this probe context; record the failure and do
+   not elevate, pair automatically or bypass it.
 2. Android: open `apps/android` in Android Studio with SDK platform 37.2, build tools
    37.0.0 and JDK 17+. Use Gradle 9.8.2 with AGP 9.5.0. The research app requires
    Android 14/API 34+

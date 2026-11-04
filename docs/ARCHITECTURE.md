@@ -37,6 +37,15 @@ These are feasibility probes, not native product UI or the production BLE transp
 No diagnostic event is connected to the Rust model as authentication/approval.
 See PHASE0_BLE_PROBE.md for its deliberately separate contract and limitations.
 
+Windows adds a separate native diagnostic shell, `kagilink.exe`, around the existing
+`kagilink-phase0-probe.exe` CLI. The GUI has two fixed child actions (inventory and
+public BLE test), a read-only result area and cancel/close cleanup. Child execution
+uses no shell or arbitrary command text. Timer polling keeps the window responsive;
+captured output is bounded and a kill-on-close job plus outer deadline supervises
+the process. No diagnostic event can authorize input or represent authenticated
+transfer. The child's existing integrity checks and 60-second BLE lifetime remain
+authoritative. This shell is Phase 0 diagnostic UI, not the Phase 4 product UI.
+
 Mobile support floors are Android 14/API 34 and iOS/iPadOS 18. Android's compile
 SDK tracks the current stable SDK (pinned platform 37.2 for this change); Apple's
 iOS target requires SDK 27.1 to opt into iPhone Duo layout behavior. These build

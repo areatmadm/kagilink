@@ -18,6 +18,15 @@ The local test commands and actual outcomes are in IMPLEMENTATION_STATUS.md.
   report KagiLink without accessing BLE, private memory or input APIs.
 - `tests/windows/test-probe.ps1`: help/version/policy and rejection of unknown or
   extra arguments. Runs without BLE scanning, focus changes or input injection.
+- Windows GUI: `target/phase0/kagilink.exe` opens a persistent diagnostic window;
+  `kagilink-phase0-probe.exe` remains the CLI. Verify no automatic probe at startup,
+  fixed action dispatch, read-only output, busy-state controls, responsive resize,
+  cancellation/close cleanup, missing sibling executable and the 70-second outer
+  supervisor limit. This does not replace the child's 60-second BLE deadline.
+- `tests/windows/test-gui-runner.ps1` compiles synthetic child/process fixtures for
+  invalid action rejection, both fixed commands/final output, the 16 KiB output
+  cap, contained-child cancellation and explicit restart. It uses no BLE, GUI or
+  input injection. It does not wait out the 70-second supervisor timeout.
 - `tests/native/test_probe_contract.py`: cross-language diagnostic UUID/value
   consistency, default ATT budget, Android permissions/no backup, Apple privacy/
   sandbox plists and Xcode target/file references. Static checks are not compilation.
@@ -40,6 +49,7 @@ API result and synthetic outcome. Avoid collecting usernames or device addresses
 | Scenario | Pass condition | Current evidence |
 |---|---|---|
 | Windows own edit | Complete SendInput count AND exact owned-control readback | Manual --self-input; separate from RDP |
+| Windows diagnostic GUI | Direct launch, readable result/status, keyboard navigation, scaling and cancel/close without orphan child | Manual open, inventory/start/stop/restart/no-sender/details and one window-size screenshot observed; broad keyboard/DPI/high-contrast/screenreader and close/deadline cases NOT RUN |
 | Focus steal | Abort when foreground/focus changes; no false success | NOT RUN; races remain |
 | Credential UI | Explicit blocked/unsupported result at ordinary integrity | NOT RUN; documented restriction |
 | mstsc prompt | Distinguish input delivery from actual RDP connection | NOT RUN; disabled |
