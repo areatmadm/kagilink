@@ -11,6 +11,9 @@ OS별 네이티브 BLE 시험판 소스가 추가되었습니다. Windows 수신
 iOS/iPadOS 송신기, macOS 송수신기는 공개된 고정 문자열만 교환하도록 제한됩니다.
 제품 앱이 아니며 플랫폼별 실제 검증 상태는 [구현 현황](docs/IMPLEMENTATION_STATUS.md),
 빌드·기기 시험 순서는 [BLE 시험판 안내](docs/PHASE0_BLE_PROBE.md)를 따르세요.
+Windows 진단 창은 빌드 후 `target/phase0/kagilink.exe`를 더블클릭해 엽니다.
+`어댑터 확인`과 `BLE 연결 시험`을 직접 선택하고 결과를 창에서 확인할 수 있습니다.
+기존 `kagilink-phase0-probe.exe`는 CLI 시험 도구로 유지합니다.
 모바일 요구사항은 Android 14 이상과 iOS/iPadOS 18 이상입니다. Android는 최신
 안정 SDK 기준, iOS는 iPhone Duo 대응을 위해 SDK 27.1로 빌드합니다. 두 모바일
 화면에 Liquid Glass 스타일을 적용하며, 기기별 렌더링·접근성 검증은 남아 있습니다.
@@ -27,6 +30,7 @@ cargo test --workspace --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 .\apps\windows\build-probe.ps1
+.\target\phase0\kagilink.exe
 .\target\phase0\kagilink-phase0-probe.exe --inventory
 ```
 

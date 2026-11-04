@@ -100,3 +100,17 @@ or third-party UI SDK. Respect accessibility contrast, reduced transparency and
 text scaling. The visual material is not a claim of authentication or protection.
 Adaptive layouts must handle iPhone Duo inner/outer displays, resizing, safe areas
 and vertical system bars. Actual rendering and device behavior remain unverified.
+
+## D011 — Windows Phase 0 diagnostic GUI, 2026-11-04
+
+Add a native Win32 window in `kagilink.exe` while preserving the existing console
+probe as `kagilink-phase0-probe.exe`. The two fixed GUI actions are read-only
+inventory and the isolated public BLE diagnostic. Keep direct launch idle until a
+user action, display results in the window, and expose cancellation. Do not expose
+the CLI's input-injection experiment or accept arbitrary commands, targets or data.
+
+Use the sibling probe process without a shell, bounded captured output and
+nonblocking message-loop polling. Supervise the child with a kill-on-close job
+and a 70-second outer deadline; the child's 60-second BLE deadline remains unchanged.
+This provides a reviewable Phase 0 interface, not a Phase 4 product, secret-transfer
+authorization or proof of peer identity/hardware/target-input safety.

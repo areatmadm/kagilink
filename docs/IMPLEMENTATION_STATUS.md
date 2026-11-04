@@ -24,7 +24,7 @@ Community and Windows SDK 10.0.22621.0 / 10.0.26100.0 detected.
 
 | Phase | State | Evidence / remaining work |
 |---|---|---|
-| 0 | In progress | Native diagnostic sources added; Windows CLI built, mobile/Apple SDK and device validation pending |
+| 0 | In progress | Native diagnostic sources added; Windows GUI/CLI built and diagnostic window exercised, mobile/Apple SDK and device validation pending |
 | 1 | Not started | Dependency/suite gate unresolved; no production PAKE/HKDF/AES/zeroization |
 | 2 | Not started | No production BLE transport; separate fixed-public-value diagnostic source only |
 | 3 | Not started | No verified StrongBox/SE/TPM key integration |
@@ -167,7 +167,8 @@ The diagnostic can be spoofed/replayed and cannot prove proximity or device
 integrity. Apple peripheral disconnect observation is incomplete; abandoned
 public state expires. Device access/consent, cleanup timing and fixed reply delivery
 still require real hardware. The receiving Windows executable remains a research
-CLI, not a completed receiver product UI. No account/certificate/provisioning,
+CLI at that checkpoint, not a completed receiver product UI. A subsequent diagnostic
+GUI shell is recorded below. No account/certificate/provisioning,
 SDK-license acceptance, device installation, store/release or server action occurred.
 
 ## Windows executable smoke test — 2026-11-04
@@ -289,3 +290,56 @@ Not verified: biometric behavior beyond the single run above (repeat runs, a fai
 or cancelled prompt, fallback to device credential being disabled), other Galaxy/Android builds, behavior
 after biometric enrollment changes, key use under load or after reboot, and any
 production key lifecycle.
+
+## Windows diagnostic GUI — 2026-11-04
+
+Native Win32 diagnostic shell is built as `target/phase0/kagilink.exe`;
+the existing CLI remains `kagilink-phase0-probe.exe`. The window has explicit
+inventory/BLE-test actions, stop, Korean result text and read-only public diagnostic
+output. It starts no probe on launch and has no secret input or injection control.
+The shell supervises only the two fixed sibling CLI commands with bounded output,
+nonblocking polling, job cleanup and a 70-second outer deadline. The child's
+integrity guard and 60-second BLE lifetime are unchanged.
+
+| GUI check | Actual outcome |
+|---|---|
+| Native GUI/CLI build | PASS, MSVC C++20 /W4 /WX; GUI PE subsystem 2 and KagiLink/AreaTM/kagilink.exe metadata checked |
+| Existing CLI regression | PASS, 6 noninteractive checks after GUI build integration |
+| GUI subprocess lifecycle fixtures | PASS, 5 synthetic groups: invalid action rejection, fixed actions/final output, output cap, contained-child cancellation and explicit restart; no BLE/UI/input in these fixtures |
+| Native source/project consistency | PASS, 7 static checks; not native device evidence |
+| GUI launch and initial window | User manually opened the GUI after automated launch hit GetCursorPos access denied (0x80070005); ready window then observed with Computer Use |
+| Inventory button | PASS in visible GUI: BLE LE/Central reported, TPM provider caveat shown; key use/TPM 2.0 still unverified |
+| BLE start, busy state and stop | PASS: start buttons disabled while running, stop enabled; stop produced cancelled status and restored start controls |
+| Explicit restart and no-sender result | PASS: restarted BLE search completed its 10-second scan and displayed no diagnostic sender; no actual peer exchange |
+| Details toggle and captured output | PASS: read-only bounded public diagnostic codes displayed, including Medium RID 8192 |
+| GUI screenshot/initial visual inspection | PASS in the observed 926 x 813 capture, with no clipped/overlapping text; local ignored captures recorded below |
+| GUI close/destructor cleanup, missing sibling, 70-second timeout | NOT RUN as end-to-end GUI cases; fixture cancellation does not establish every lifecycle path |
+| Keyboard, DPI/scaling, high contrast and screenreader matrix | NOT RUN |
+| Real BLE peer/credential input/RDP | NOT RUN; unsupported secret input remains disabled |
+
+Observed local screenshots: `target/phase0/screenshots/adapter-result.jpg`,
+`target/phase0/screenshots/ble-running.jpg` and
+`target/phase0/screenshots/ble-result-details.jpg`. They remain ignored local
+artifacts, not public-source or CI uploads. The GUI was left open after inspection.
+These captures establish only the displayed diagnostic states and this window
+size; they do not prove cross-device exchange, authentication or full accessibility.
+
+### Windows Glass restyle (visual only)
+
+The GUI was restyled to match the Android/Apple Glass design (teal gradient backdrop,
+frosted dark glass panels with rim, pill controls; GDI+, `gdiplus.lib`/`uxtheme.lib`
+added to the GUI link line; high-contrast fallback to system colors). No behaviour,
+security policy or child-process logic changed.
+
+| Check | Actual outcome |
+|---|---|
+| GUI build | PASS, MSVC C++20 /W4 /WX |
+| Runner lifecycle fixtures | PASS, 5 synthetic groups |
+| Visual capture of ready, adapter-result and details-expanded states (940 x 820) | PASS by inspection, no clipped/overlapping text; captured via PrintWindow into a scratch folder, not kept in the repository |
+| Hover state, high-contrast mode, DPI scaling, screen-reader, keyboard matrix | NOT RUN (hover state not implemented) |
+| BLE connection test button in the restyled GUI | NOT RUN |
+
+This is Phase 0 diagnostic UI. Android/Apple SDK compilation, real-device exchange,
+hardware key operations, production security-core selection and native product UI
+remain incomplete. No release/signing/store/server action is authorized by this
+diagnostic implementation.

@@ -35,7 +35,9 @@ These actions have not been performed.
 ## KagiLink repository and artifact identity
 
 Source and future releases: https://github.com/areatmadm/kagilink.
-Research probe filename: kagilink-phase0-probe.exe (not a released product).
+Research diagnostic window: kagilink.exe, with sibling CLI kagilink-phase0-probe.exe.
+These two local diagnostic executables are not released products. Keep their
+pairing/version and bounded fixed-action behavior in future reproducibility checks.
 Release note template: ../.github/RELEASE_TEMPLATE.md.
 No release/signing/upload workflow, Cosign expected workflow identity, download
 link, store package identifier or published artifact exists yet. Future Sigstore
