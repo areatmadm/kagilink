@@ -1,5 +1,5 @@
 [workspace]
-members = ["core/phase0-model", "core/cpace-eval"]
+members = ["core/phase0-model", "core/cpace-eval", "core/kagilink-core"]
 resolver = "2"
 
 [workspace.package]

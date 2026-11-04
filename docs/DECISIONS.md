@@ -163,3 +163,40 @@ CPACE-P256_XMD:SHA-256_SSWU_NU_ suite and the draft's positive vectors do not ap
 it (upstream states this in its tests). Ristretto255 is a prime-order group, so
 no cofactor or invalid-curve handling is needed. Selection remains conditional on the
 open gates in DEPENDENCY_REVIEW.md (external review, side-channel/erasure review).
+
+## D014 — Phase 1 core: one shared Rust crate, frozen v1 handshake and transport, 2026-11-04
+
+Owner decisions (interview, 2026-11-04):
+
+1. The security core is ONE shared Rust crate, core/kagilink-core (package
+   areatm-kagilink-core), used by all platforms through FFI later. Native
+   reimplementation per platform was rejected. This closes the open "native versus
+   shared Rust core" question noted under D012.
+2. This iteration builds the handshake and AES-256-GCM transport: CPace, explicit
+   mutual key confirmation, HKDF key schedule, framing, replay/nonce rules and session
+   lifecycle. Synthetic data only.
+3. After the core is complete, the Android, iOS, macOS and cloud sessions port FFI
+   bindings and vector passes in parallel. They must not start before the Windows
+   session instructs them.
+4. Attempt limiting is enforced solely by the receiver (Windows/macOS), which creates
+   and displays the code: 60 s monotonic TTL from first display, never extended; at
+   most 3 failed attempts; the code is destroyed at the limit or on success. The sender
+   cannot extend or reset it and must ask for a fresh code after any failure.
+
+Frozen v1 design: see PHASE1_CORE_DESIGN.md and PROTOCOL.md (roles, messages M1-M4,
+CPace inputs, transcript hash, HKDF labels, confirmation order, attempt lifecycle,
+transport nonces/AAD/framing). Roles: sender = CPace initiator, receiver = responder,
+independent of BLE role. Any other version or suite is rejected (no downgrade).
+
+Pinned dependency set: aes-gcm =0.11.1, hkdf =0.13.0, hmac =0.13.0, sha2 =0.11.1,
+pakery-cpace / pakery-core / pakery-crypto =0.6.2, zeroize 1, subtle 2.6, rand_core
+0.10, getrandom 0.4. RustSec check: no advisory entries for hmac, hkdf, subtle or
+getrandom; historical entries RUSTSEC-2023-0096 (aes-gcm, fixed in >=0.10.3) and
+RUSTSEC-2021-0100 (sha2, fixed in >=0.9.8) are below the pinned versions. This is an
+advisory lookup, not an audit or a cargo audit/deny run on the full lock.
+
+Unchanged: D012 safety-first applies. Real-secret transfer stays disabled until an
+independent review of the exact locked versions exists, and Phase 0 exit criterion 3
+stays open. Verification (local, 2026-11-04): 29 transport unit tests and 38 handshake tests pass (debug
+build); fmt and clippy -D warnings clean. This is synthetic-test evidence only; no audit,
+fuzzing, side-channel or memory review has been done.

@@ -69,6 +69,28 @@ candidate evidence only. Phase 0 exit criterion 3 is NOT closed: no audit, no
 side-channel/erasure review, no cargo audit/deny, no cross-language vectors. Phase 1
 production code remains gated; real-secret transfer stays disabled.
 
+## Phase 1 core prototype (core/kagilink-core) — 2026-11-04
+
+Implemented per D014: CPace (pakery-cpace 0.6.2, Ristretto255) handshake with explicit
+mutual key confirmation, HKDF-SHA-512 key schedule, receiver-enforced 60 s TTL and
+three-failure budget, AES-256-GCM framed transport. `aes-gcm` is built with its
+`zeroize` feature. Built in parallel (transport, tests and docs by separate agents,
+handshake by the main session) and integrated here.
+
+| Check | Actual outcome |
+|---|---|
+| cargo fmt --all | PASS |
+| cargo clippy --workspace --all-targets -- -D warnings | PASS |
+| cargo test --workspace (debug) | PASS: 29 transport unit tests, 38 handshake tests, 7 CPace draft vectors, 11 Phase 0 model tests |
+| Two handshake tests initially failed because of test bugs (flipped a suite byte instead of a sid byte; used the wrong receiver's code); fixed in the tests, no implementation change | recorded for transparency |
+| Fuzzing, cargo audit/deny, constant-time/side-channel review, memory-dump review, independent audit | NOT RUN |
+| Cross-language vectors, FFI, BLE mapping, hardware key use, real-secret transfer | NOT DONE; real-secret transfer remains disabled |
+
+Known limits: `SecureChannel::new` and the key schedule copy 32-byte keys by value, so
+transient stack copies are not tracked; `Aes256Gcm` is rebuilt per operation. Errors
+The error `AttemptInProgress` is defined but the handshake counts an abandoned attempt as a plain
+failure. Phase 0 exit criterion 3 stays open.
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;
