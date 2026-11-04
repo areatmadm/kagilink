@@ -1,4 +1,4 @@
-# Windows Phase 0 feasibility probe
+# KagiLink Windows Phase 0 feasibility probe
 
 C++20/C++/WinRT standalone EXE; static MSVC runtime, `asInvoker`, `uiAccess=false`.
 Rejects non-medium-integrity input tests. Read-only inventory can run at other
@@ -9,8 +9,10 @@ From repository root:
 
 ```powershell
 .\apps\windows\build-probe.ps1
-.\target\phase0\windows-probe.exe --policy
-.\target\phase0\windows-probe.exe --inventory
+.\target\phase0\kagilink-phase0-probe.exe --policy
+.\target\phase0\kagilink-phase0-probe.exe --inventory
+.\target\phase0\kagilink-phase0-probe.exe --version
+.\target\phase0\kagilink-phase0-probe.exe --help
 ```
 
 Inventory queries default adapter/LE/central capability and opens/closes the TPM
@@ -20,7 +22,7 @@ or claim a working transfer. Exit 2 means unavailable/blocked/incomplete.
 Optional interactive synthetic test, after saving your work:
 
 ```powershell
-.\target\phase0\windows-probe.exe --self-input
+.\target\phase0\kagilink-phase0-probe.exe --self-input
 ```
 
 This briefly opens its own edit control and attempts only a fixed public literal

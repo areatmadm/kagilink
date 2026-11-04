@@ -1,4 +1,4 @@
-# Threat model — draft
+# KagiLink threat model — draft
 
 Assets: stored vault ciphertext/key handles, pairing code, PAKE ephemeral state,
 session keys, transient plaintext, transfer approval and selected input target.

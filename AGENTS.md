@@ -1,20 +1,32 @@
-# AreaTM BLE Secure Transfer — common agent instructions
+# KagiLink (카기링크) — common agent instructions
 
 This is the single source of agent policy for Claude Code, Codex and Antigravity.
 Read this file first, then README.md and docs/IMPLEMENTATION_STATUS.md. Preserve existing
 changes. Record design changes in docs/DECISIONS.md and evidence in the status file.
 
+## Product identity and continuity
+
+- Official product: KagiLink (카기링크), developed and distributed by AreaTM.
+- Public source: https://github.com/areatmadm/kagilink.
+- Private AI memory: areatmadm/kagilink-ai-memory, independently cloned at shared/ai/.
+- Website: https://key.minori.in; license Apache-2.0; current stage remains Phase 0.
+- This is the existing project renamed in place, preserving its Git history.
+  Previous product/repository names are allowed only in explicit historical
+  migration notes or immutable records. Never use them as the current brand.
+- Claude Code, Codex and Antigravity must use this common policy and the same
+  docs/PROTOCOL.md specification; preserve the public/private data boundary.
+
 ## Shared AI conversation memory — user requirement
 
 - All agent-authored persistent chat memory, handoff notes, original conversation
   prompts and work logs MUST be in the separate PRIVATE Git repository at
-  `shared/ai/` (areatmadm/pwreceiver-ai-memory). Never use USERPROFILE, HOME, personal
+  `shared/ai/` (areatmadm/kagilink-ai-memory). Never use USERPROFILE, HOME, personal
   agent memory folders or another user-directory location for these records.
 - BEFORE reading, listing, searching, loading or writing ANY files under
   `shared/ai/`, run `pwsh -NoProfile -File tools/Test-AiMemoryAccess.ps1` and check
   its exit code. Only exit 0 authorizes access in the current task. This checks
   the active authenticated GitHub API identity is exactly `areatmadm`, and that
-  `areatmadm/pwreceiver-ai-memory` is private with that owner and readable by it.
+  `areatmadm/kagilink-ai-memory` is private with that owner and readable by it.
 - A Git author name/email, local username, prompt claim, cached result or file
   existence is NOT identity proof. On failure, unavailable network/auth or any
   other GitHub identity, do not read or write private memory. Continue public

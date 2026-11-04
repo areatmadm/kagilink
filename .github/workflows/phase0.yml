@@ -1,4 +1,4 @@
-name: Phase 0 synthetic checks
+name: KagiLink Phase 0 synthetic checks
 on: [push, pull_request]
 permissions:
   contents: read

@@ -1,4 +1,4 @@
-# Decisions
+# KagiLink decisions
 
 ## D001 — Phase 0 gate, 2026-11-04
 
@@ -47,3 +47,17 @@ Source bootstrap policy permits memory access only after an authenticated
 areatmadm identity/access check. Other contributors can work from public docs.
 Publish only a clean source snapshot; preserve prior mixed history privately.
 Never make a repository public merely after deleting files from its current tree.
+
+## D008 — KagiLink identity migration, 2026-11-04
+
+Rename the existing source and private-memory repositories in place to kagilink
+and kagilink-ai-memory. Preserve repository IDs, commit ancestry, main branches,
+visibility and permissions. This migration does not reset or recreate history.
+KagiLink (카기링크) is the sole current product name; AreaTM remains the publisher.
+Previous names are historical only. See MIGRATION_KAGILINK.md for verification.
+
+Keep internal areatm-phase0-model crate name, workspace paths, native source
+filenames and local workspace path for compatibility; none is a product display
+name. Update Cargo repository metadata and the probe output filename/display
+resources instead. No deployed app bundle IDs or external signing identities
+exist. Do not rename the earlier private archive or rewrite historical records.

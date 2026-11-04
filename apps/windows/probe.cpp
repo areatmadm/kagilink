@@ -9,7 +9,7 @@
 #include <string_view>
 
 constexpr bool real_secret_transfer_enabled = false;
-constexpr wchar_t synthetic[] = L"AreaTM-SYNTHETIC-ONLY-42";
+constexpr wchar_t synthetic[] = L"KagiLink-SYNTHETIC-ONLY-42";
 
 bool ordinary_integrity() {
     HANDLE token{};
@@ -89,10 +89,10 @@ int self_input() {
     WNDCLASSW wc{};
     wc.lpfnWndProc = window_proc;
     wc.hInstance = instance;
-    wc.lpszClassName = L"AreaTM_Phase0_Synthetic";
+    wc.lpszClassName = L"KagiLink_Phase0_Synthetic";
     if (!RegisterClassW(&wc)) return 2;
     const auto window = CreateWindowW(wc.lpszClassName,
-        L"AreaTM synthetic input test — no real passwords", WS_OVERLAPPEDWINDOW,
+        L"KagiLink synthetic input test — no real passwords", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 600, 180, nullptr, nullptr, instance, nullptr);
     if (!window) return 2;
     const auto edit = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER,
@@ -137,6 +137,16 @@ int self_input() {
 }
 
 int wmain(int argc, wchar_t** argv) {
+    if (argc == 2 && std::wstring_view(argv[1]) == L"--version") {
+        std::cout << "KagiLink 0.0.0-phase0 (AreaTM)\nSynthetic-only research; not a production release.\n";
+        return 0;
+    }
+    if (argc == 2 && (std::wstring_view(argv[1]) == L"--help" || std::wstring_view(argv[1]) == L"-h")) {
+        std::cout << "KagiLink Phase 0 probe by AreaTM\n"
+                     "Usage: kagilink-phase0-probe.exe --inventory | --policy | --self-input | --version | --help\n"
+                     "Synthetic-only; no arbitrary password or target arguments supported.\n";
+        return 0;
+    }
     if (argc == 2 && std::wstring_view(argv[1]) == L"--policy") {
         static_assert(!real_secret_transfer_enabled);
         std::cout << "REAL_SECRET_TRANSFER_DISABLED\nRDP_INPUT_UNSUPPORTED\n";
@@ -153,7 +163,7 @@ int wmain(int argc, wchar_t** argv) {
         return 2;
     }
     if (argc == 2 && std::wstring_view(argv[1]) == L"--self-input") return self_input();
-    std::cout << "Usage: windows-probe.exe --inventory | --policy | --self-input\n"
+    std::cout << "Usage: kagilink-phase0-probe.exe --inventory | --policy | --self-input | --version | --help\n"
                  "Synthetic-only; no arbitrary password or target arguments supported.\n";
     return 2;
 }

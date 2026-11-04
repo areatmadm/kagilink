@@ -1,4 +1,4 @@
-# Protocol constraints — draft, not an interoperable implementation
+# KagiLink protocol constraints — draft, not an interoperable implementation
 
 No production wire protocol or cipher suite is finalized. No mock event constitutes
 cryptographic authentication. Phase 0 model fields are NOT a wire specification.

@@ -1,10 +1,10 @@
-# AI conversation memory access
+# KagiLink AI conversation memory access
 
 Read root AGENTS.md before any private-memory access. Public source contains no
 conversation transcripts or original conversation prompts. Public requirements,
 architecture, decisions and implementation status suffice for contribution.
 
-Private memory lives in a separate Git repository, `areatmadm/pwreceiver-ai-memory`,
+Private memory lives in a separate Git repository, `areatmadm/kagilink-ai-memory`,
 cloned at `shared/ai/` inside this project. The source .gitignore excludes that
 entire directory. It is not a submodule and normal source clones require no access
 to the private repository. No memory may be stored in USER/HOME folders.

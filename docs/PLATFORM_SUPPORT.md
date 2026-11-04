@@ -1,4 +1,4 @@
-# Platform support — 2026-11-04
+# KagiLink platform support — 2026-11-04
 
 API feasibility is distinct from hardware validation and shipped support.
 

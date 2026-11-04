@@ -1,4 +1,4 @@
-# Contributing
+# Contributing to KagiLink
 
 Read AGENTS.md, docs/DECISIONS.md and docs/IMPLEMENTATION_STATUS.md first.
 Use synthetic data. Explain the threat addressed and provide negative-path evidence.

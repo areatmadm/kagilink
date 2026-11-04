@@ -1,4 +1,4 @@
-# Phase 0 official-source review — checked 2026-11-04
+# KagiLink Phase 0 official-source review — checked 2026-11-04
 
 This is an API/documentation review, not a certification or real-device result.
 

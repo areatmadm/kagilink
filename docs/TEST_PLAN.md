@@ -1,4 +1,4 @@
-# Test plan
+# KagiLink test plan
 
 Use public synthetic values only. Never request or record a real RDP password.
 The local test commands and actual outcomes are in IMPLEMENTATION_STATUS.md.
@@ -14,6 +14,8 @@ The local test commands and actual outcomes are in IMPLEMENTATION_STATUS.md.
 - --inventory queries adapter/LE support and opens/closes TPM provider only.
   Low-integrity execution is diagnostic-only, exits 2 and cannot pass the
   normal-user feasibility criterion. --self-input refuses non-Medium execution.
+- Probe executable: target/phase0/kagilink-phase0-probe.exe; --help and --version
+  report KagiLink without accessing BLE, private memory or input APIs.
 
 ## Manual native feasibility matrix
 

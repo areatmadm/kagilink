@@ -1,4 +1,4 @@
-# Requirements and acceptance mapping
+# KagiLink requirements and acceptance mapping
 
 Public requirements are summarized here. The original conversation prompt is in
 the separate private AI memory repository and is not required for public-source

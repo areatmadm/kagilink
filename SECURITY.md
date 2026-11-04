@@ -1,4 +1,4 @@
-# Security policy
+# KagiLink security policy
 
 Research prototype: do not use real credentials. No supported production release exists.
 Do not put credentials, pairing codes, keys or memory dumps into issues or reports.

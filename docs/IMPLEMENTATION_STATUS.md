@@ -1,18 +1,19 @@
-# Implementation status — 2026-11-04 (Asia/Seoul)
+# KagiLink implementation status — 2026-11-04 (Asia/Seoul)
 
 Phase 0 is IN PROGRESS. Real-secret transfer is disabled. This is not release ready.
 
 ## Environment
 
-Initial workspace: empty S:\project\pwreceiver; not a Git repository.
+Historical initial workspace: empty S:\project\pwreceiver; not a Git repository.
+The local folder name is retained for compatibility; current product is KagiLink.
 Source publication is separate from a product release. The source/memory Git split
 uses a clean source history, an independent ignored private repository at
 shared/ai/, and a private archive for earlier mixed history. See AI_MEMORY.md.
 Original conversation prompts/transcripts are excluded from the source snapshot.
 No release or binary was published.
 
-- Source: https://github.com/areatmadm/pwreceiver — PUBLIC, fresh source-only history.
-- Memory: areatmadm/pwreceiver-ai-memory — PRIVATE, only owner listed as collaborator.
+- Source: https://github.com/areatmadm/kagilink — PUBLIC, existing source history preserved.
+- Memory: areatmadm/kagilink-ai-memory — PRIVATE, only owner listed as collaborator.
 - Earlier mixed history: areatmadm/pwreceiver-private-archive — PRIVATE.
 - Source full local object history and remote tree contain no memory/original-prompt
   paths; no submodule/gitlink. Earlier local Git metadata preserved under ignored target/.
@@ -41,9 +42,9 @@ Community and Windows SDK 10.0.22621.0 / 10.0.26100.0 detected.
 | cargo fmt --all -- --check | PASS |
 | cargo clippy --workspace --all-targets --locked --offline -- -D warnings | PASS |
 | apps/windows/build-probe.ps1 | PASS, MSVC C++20 /W4 /WX /MT; portable research EXE built |
-| windows-probe.exe --policy | PASS, real-secret transfer disabled and RDP unsupported |
-| windows-probe.exe --inventory | INCOMPLETE, diagnostic-only restricted process; native exit 2 |
-| windows-probe.exe --self-input | BLOCKED safely by integrity guard; no input performed |
+| Historical Phase 0 probe --policy | PASS, real-secret transfer disabled and RDP unsupported |
+| Historical Phase 0 probe --inventory | INCOMPLETE, diagnostic-only restricted process; native exit 2 |
+| Historical Phase 0 probe --self-input | BLOCKED safely by integrity guard; no input performed |
 | GitHub-hosted clean-source CI | PASS, run 41760663274: fmt, clippy, 11 model tests, 9 memory-gate cases |
 | Private-memory identity gate | PASS, 9 mocked cases; actual owner allow and unavailable-auth deny verified |
 | Real devices / crypto / interoperability / fuzzing | NOT RUN |
@@ -73,3 +74,31 @@ cryptographic evidence. No production memory zeroization has been implemented.
 No real credentials have been used. No production memory-clearing guarantees,
 hardware attestation, secure target input, interoperability or full offline
 integrity have been established. Private handoff access instructions are in AI_MEMORY.md.
+
+## KagiLink migration
+
+Repository rename completed in place: same repository IDs, original main branch
+HEADs and public/private visibility verified immediately after rename. Existing
+history is preserved; no reset, replacement repository or force push. See
+MIGRATION_KAGILINK.md for scope, compatibility decisions and unimplemented targets.
+Current build/test/CI evidence will be recorded here after regression checks.
+
+| Migration regression check | Result |
+|---|---|
+| cargo fmt --all -- --check | PASS |
+| cargo clippy --workspace --all-targets --locked --offline -- -D warnings | PASS |
+| cargo test --workspace --locked --offline | PASS, original 11 model tests retained |
+| tests/security/test-ai-memory-gate.ps1 | PASS, 10 cases including historical-name rejection |
+| Updated private-memory gate + initializer | PASS, actual areatmadm access to renamed private repository |
+| Windows MSVC C++20 /W4 /WX build | PASS, kagilink-phase0-probe.exe |
+| New probe --help / --version / --policy | PASS (exit 0), KagiLink text and disabled real-secret transfer |
+| Windows product resource | PASS, KagiLink/AreaTM/version/original filename/copyright verified |
+| New probe --inventory | Same limited diagnostic result: Low RID 4096, LE/Central/provider reported, exit 2 |
+| New probe --self-input | Same safe refusal at Low integrity, exit 2; no keystrokes injected |
+| Source/private pre-migration commit ancestry | PASS, both original HEADs remain ancestors |
+| Source history/ignore isolation | PASS, no private-memory/original-prompt paths or gitlinks |
+| Renamed-repository GitHub Actions | Pending first migration push |
+
+Local Rust tooling reported an incremental-cache hard-link fallback to copying;
+all commands exited successfully. Real-device, Medium-integrity input and RDP
+support remain unverified. No additional production security capability is claimed.

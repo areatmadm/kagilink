@@ -6,10 +6,10 @@ try {
     if ($LASTEXITCODE -ne 0 -or ($identityText -join "`n").Trim() -cne 'areatmadm') {
         throw 'Owner identity not verified'
     }
-    $repoText = & gh api repos/areatmadm/pwreceiver-ai-memory 2>$null
+    $repoText = & gh api repos/areatmadm/kagilink-ai-memory 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'Private repository access not verified' }
     $repo = ($repoText -join "`n") | ConvertFrom-Json
-    if ($repo.full_name -cne 'areatmadm/pwreceiver-ai-memory' -or
+    if ($repo.full_name -cne 'areatmadm/kagilink-ai-memory' -or
         $repo.owner.login -cne 'areatmadm' -or
         $repo.private -isnot [bool] -or $repo.private -ne $true -or
         $repo.permissions.pull -isnot [bool] -or $repo.permissions.pull -ne $true) {

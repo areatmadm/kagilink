@@ -14,12 +14,12 @@ if (Test-Path -LiteralPath $memoryPath) {
     }
     $memoryRemote = & git -C $memoryPath remote get-url origin
     if ($LASTEXITCODE -ne 0 -or $memoryRemote -cnotin @(
-        'https://github.com/areatmadm/pwreceiver-ai-memory.git',
-        'git@github.com:areatmadm/pwreceiver-ai-memory.git')) {
+        'https://github.com/areatmadm/kagilink-ai-memory.git',
+        'git@github.com:areatmadm/kagilink-ai-memory.git')) {
         throw 'Unexpected private memory remote; no files were read.'
     }
     Write-Output 'Independent private memory repository verified; pull/commit separately after checking local edits.'
     exit 0
 }
-& git clone -- https://github.com/areatmadm/pwreceiver-ai-memory.git $memoryPath
+& git clone -- https://github.com/areatmadm/kagilink-ai-memory.git $memoryPath
 if ($LASTEXITCODE -ne 0) { throw 'Private memory clone failed.' }

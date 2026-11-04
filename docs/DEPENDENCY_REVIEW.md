@@ -1,4 +1,4 @@
-# Cryptographic dependency review — preliminary, 2026-11-04
+# KagiLink cryptographic dependency review — preliminary, 2026-11-04
 
 No cryptographic runtime dependencies are selected/installed. The synthetic model
 uses std only. No claim of a clean vulnerability scan is made.

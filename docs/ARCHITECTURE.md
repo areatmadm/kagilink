@@ -1,4 +1,4 @@
-# Architecture — Phase 0
+# KagiLink architecture — Phase 0
 
 Native apps own BLE, user authentication, secure storage and UI. A future Rust
 security core owns cryptographic protocol state through a narrow, versioned C ABI.

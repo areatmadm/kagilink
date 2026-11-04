@@ -5,3 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "KagiLink Phase 0 synthetic lifecycle and framing model; no real-secret transfer"

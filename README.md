@@ -1,7 +1,8 @@
-# AreaTM BLE Secure Transfer
+# KagiLink (카기링크)
 
-사용자가 승인한 비밀 문자열을 가까운 컴퓨터에 완전 오프라인 BLE로 전달하는
-Apache-2.0 오픈소스 프로젝트입니다. 공식 사이트: https://key.minori.in.
+KagiLink는 사용자가 승인한 비밀 문자열을 가까운 컴퓨터에 완전 오프라인 BLE로
+일회성 암호화 전달하는 AreaTM의 Apache-2.0 오픈소스 프로젝트입니다.
+공식 사이트: https://key.minori.in. [공개 저장소](https://github.com/areatmadm/kagilink).
 
 **현재: Phase 0 연구용. 실제 비밀번호 전송, 저장소, PAKE, BLE 전송 및 RDP
 자동 입력은 구현/활성화되어 있지 않습니다.**
@@ -18,7 +19,7 @@ cargo test --workspace --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 .\apps\windows\build-probe.ps1
-.\target\phase0\windows-probe.exe --inventory
+.\target\phase0\kagilink-phase0-probe.exe --inventory
 ```
 
 `--inventory`는 BLE 어댑터 API와 TPM 제공자 접근만 확인합니다. 실제 BLE 상호운용,
@@ -29,3 +30,4 @@ TPM 키 생성/사용 또는 RDP 입력 성공을 의미하지 않습니다. 자
 AI 작업 기록은 별도 비공개 저장소로 관리합니다. [접근 및 설치 안내](docs/AI_MEMORY.md).
 설계/검증 근거: [ARCHITECTURE](docs/ARCHITECTURE.md), [PHASE0_RESEARCH](docs/PHASE0_RESEARCH.md),
 [TEST_PLAN](docs/TEST_PLAN.md). 공개 요구사항은 [REQUIREMENTS](docs/REQUIREMENTS.md)에 정리되어 있습니다.
+명칭 이관 및 호환성 기록: [KagiLink migration](docs/MIGRATION_KAGILINK.md).

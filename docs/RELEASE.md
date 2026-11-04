@@ -1,4 +1,4 @@
-# Release plan — no release authorized
+# KagiLink release plan — no release authorized
 
 Pre-release blockers: Phase 0 gates, complete core/native apps, independent security
 review, real devices, input safety and accurate support matrix. A runnable probe
@@ -21,3 +21,14 @@ protects operator management only. Core operation must never depend on them.
 Account/certificate issuance, public GitHub creation/releases, store submission,
 DNS/Cloudflare/site changes require the user's explicit approval at that stage.
 These actions have not been performed.
+
+## KagiLink repository and artifact identity
+
+Source and future releases: https://github.com/areatmadm/kagilink.
+Research probe filename: kagilink-phase0-probe.exe (not a released product).
+Release note template: ../.github/RELEASE_TEMPLATE.md.
+No release/signing/upload workflow, Cosign expected workflow identity, download
+link, store package identifier or published artifact exists yet. Future Sigstore
+verification must bind the exact workflow under areatmadm/kagilink; freeze that
+identity only when a reviewed release workflow exists. No secret values were
+read/copied, and the repository was renamed in place to retain its settings.

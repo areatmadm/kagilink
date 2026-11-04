@@ -1,6 +1,9 @@
-# Android sender — planned
+# KagiLink Android sender — planned
 
 Kotlin + BLE Peripheral + mandatory StrongBox Keystore. No native target exists.
 Require actual generation, SECURITY_LEVEL_STRONGBOX verification and successful
 auth-bound operation. Fail on missing StrongBox, wrong key level or API failure;
 never fallback to TEE/software. Test permissions/advertising on devices.
+
+Future app display name: KagiLink (카기링크), by AreaTM. No application ID or native
+app display-name resource exists yet; set these when the native app is implemented.

@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $gatePath = Join-Path $PSScriptRoot '..\..\tools\Test-AiMemoryAccess.ps1'
 $gateCode = Get-Content -LiteralPath $gatePath -Raw
-$scenarios = @('owner', 'other-user', 'network-failure', 'public-repo', 'wrong-owner', 'wrong-repo', 'no-access', 'invalid-json', 'string-private')
+$scenarios = @('owner', 'other-user', 'network-failure', 'public-repo', 'wrong-owner', 'wrong-repo', 'no-access', 'invalid-json', 'string-private', 'historical-repo-name')
 foreach ($scenario in $scenarios) {
     # Isolated runspace: mock gh and exit without affecting this test process.
     $runner = [PowerShell]::Create()
@@ -17,13 +17,14 @@ foreach ($scenario in $scenarios) {
                     return 'areatmadm'
                 }
                 if ($script:testCase -eq 'invalid-json') { return '{invalid' }
-                $record = @{full_name='areatmadm/pwreceiver-ai-memory'; owner=@{login='areatmadm'}; private=$true; permissions=@{pull=$true}}
+                $record = @{full_name='areatmadm/kagilink-ai-memory'; owner=@{login='areatmadm'}; private=$true; permissions=@{pull=$true}}
                 switch ($script:testCase) {
                     'public-repo' { $record.private = $false }
                     'wrong-owner' { $record.owner.login = 'other' }
                     'wrong-repo' { $record.full_name = 'areatmadm/other' }
                     'no-access' { $record.permissions.pull = $false }
                     'string-private' { $record.private = 'true' }
+                    'historical-repo-name' { $record.full_name = 'areatmadm/pwreceiver-ai-memory' }
                 }
                 return $record | ConvertTo-Json -Depth 4
             }
