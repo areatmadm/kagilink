@@ -230,3 +230,62 @@ round trip. It does not prove proximity, authentication, StrongBox/key behavior,
 MTU/notification handling, disconnect/permission/radio-off behavior, other adapters
 or OS versions, Android lint, TalkBack/large-font/visual layout, or any production
 transfer. The Phase 0 gate remains open.
+
+## Android StrongBox verification module — 2026-11-04
+
+The StrongBox-mandatory policy is unchanged (StrongBox only; no TEE or software
+fallback; fail closed). This adds an independent Phase 0 diagnostic module
+`apps/android/strongbox` (`in.minori.key.phase0.strongbox`, no INTERNET permission, no
+third-party dependencies, own lockfile). It is separate from the BLE diagnostic app and
+is not approval for any password storage or transfer. It uses only random synthetic
+data, requests every key with `setIsStrongBoxBacked(true)` and never retries as TEE or
+software, and deletes every temporary key (`kagilink_phase0_sb_*`; a final check confirms
+none remain). Only non-sensitive verdict lines are logged (tag `KagiStrongBox`).
+
+Verdict vocabulary: SUPPORTED, UNSUPPORTED (StrongBox absent/unavailable), UNVERIFIABLE
+(could not be evaluated), FAILED (key created but not StrongBox, or use failed).
+
+Build: `:strongbox:assembleDebug` PASS; `:strongbox:lintDebug` PASS with 12 warnings
+(manifest icon/allowBackup, SetTextI18n in the diagnostic UI) and no errors. The new
+module has its own `gradle.lockfile` (written for this module only; existing locks
+unchanged; it does not include the connected-test UTP configurations).
+
+### Galaxy S24 (SM-S921N, Android 16 / API 36)
+
+| Check | Verdict | Detail |
+|---|---|---|
+| Feature flag `FEATURE_STRONGBOX_KEYSTORE` | SUPPORTED | informational only |
+| ECDSA P-256 signing key | SUPPORTED | `KeyInfo` level StrongBox; sign/verify ok; tampered message rejected |
+| AES-256-GCM key | SUPPORTED | `KeyInfo` level StrongBox, 256-bit; round trip ok; tampered ciphertext rejected |
+| Key attestation (EC) | SUPPORTED, offline limits below | challenge matched; chain of 4 with valid signatures and dates; attestation and KeyMint levels StrongBox; attestation version 300; root self-signed, SPKI SHA-256 `feb2ea7551ee316ed4bb443c8293b884dbfdea40b603ee3e4f4a897e4580fbae` |
+| Key attestation (AES) | UNVERIFIABLE | platform returns no chain for a symmetric key |
+| Temporary keys deleted | SUPPORTED | no `kagilink_phase0_sb_*` aliases remain |
+| Overall (EC + AES + attestation) | SUPPORTED | non-biometric scope only |
+| Biometric key creation (`BIOMETRIC_STRONG`, per-use, validity 0, invalidated by enrollment) | SUPPORTED | `KeyInfo` level StrongBox |
+| Key use before authentication | SUPPORTED | refused |
+| Key use after fresh `BIOMETRIC_STRONG` authentication | SUPPORTED | succeeded once; an immediate second use was refused and needs a new prompt |
+| Temporary keys deleted (after biometric run) | SUPPORTED | no `kagilink_phase0_sb_*` aliases remain |
+
+The biometric rows come from one run with the user's own enrolled fingerprint (user-
+performed prompt, 2026-11-04 15:15 KST). Only the three result lines were recorded;
+no biometric data is accessible to the app.
+
+Offline attestation limits: this proves chain consistency only (signatures, validity,
+challenge, levels). Revocation/status freshness (Google's attestation status list)
+cannot be fully checked offline, and no network is used, so a revoked or compromised
+intermediate/leaf would not be detected. No trusted root is embedded or pinned, so the
+chain is NOT shown to terminate in a genuine Google root; the root SPKI hash is
+recorded only for a future pinning decision. Attestation does not prove the device is
+untampered at use time.
+
+### Redmi Pad Pro (2405CRPFDL)
+
+No StrongBox run. `pm list features` shows no `android.hardware.strongbox_keystore`
+(only `hardware_keystore=100`), so it is treated as UNSUPPORTED for sensitive transfer
+on that evidence alone; the module was not installed or run on it. Its SoC (Snapdragon
+7s Gen 2) is user-confirmed.
+
+Not verified: biometric behavior beyond the single run above (repeat runs, a failed
+or cancelled prompt, fallback to device credential being disabled), other Galaxy/Android builds, behavior
+after biometric enrollment changes, key use under load or after reboot, and any
+production key lifecycle.

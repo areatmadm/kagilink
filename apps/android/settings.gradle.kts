@@ -7,3 +7,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "KagiLinkPhase0"
 include(":app")
+include(":strongbox")

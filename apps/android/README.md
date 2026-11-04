@@ -41,3 +41,7 @@ StrongBox is mandatory for the future product. This public diagnostic reports on
 the feature flag, explicitly unverified. It creates no key and enables no sensitive
 transfer on any hardware. Actual generation, STRONGBOX level, auth-bound use and
 negative devices still gate production; no TEE/software fallback is allowed.
+
+StrongBox verification (independent Phase 0 module, not part of the BLE diagnostic app):
+[`strongbox/`](strongbox) — results and limits in
+[implementation status](../../docs/IMPLEMENTATION_STATUS.md).
