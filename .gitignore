@@ -1,0 +1,7 @@
+/target/
+/shared/ai/
+**/__pycache__/
+*.pdb
+*.obj
+*.ilk
+.DS_Store

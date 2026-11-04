@@ -1,0 +1,6 @@
+AreaTM BLE Secure Transfer
+Copyright 2026 AreaTM contributors
+
+Licensed under the Apache License, Version 2.0.
+No third-party runtime libraries are selected in the Phase 0 Rust model.
+Windows probe uses operating-system APIs and Windows SDK headers.
