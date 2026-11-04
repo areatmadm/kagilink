@@ -19,3 +19,5 @@ Assert-Invocation @('--ble-test', 'SYNTHETIC-EXTRA') 2 $rejection $executionMark
 Assert-Invocation @('--self-input', 'SYNTHETIC-EXTRA') 2 $rejection $executionMarkers
 Assert-Invocation @('--unknown') 2 $rejection $executionMarkers
 # No radio scan, foreground changes or input injection is performed by this script.
+# Every assertion above throws on failure; clear the last native exit code (2 is expected) so pwsh exits 0.
+exit 0
