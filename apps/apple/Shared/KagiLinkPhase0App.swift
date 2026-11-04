@@ -23,7 +23,7 @@ private struct ProbeScreen: View {
     @ObservedObject var probe: BLEProbe
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityContrast) private var contrast
+    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -115,7 +115,7 @@ private struct ProbeScreen: View {
 /// Material belongs behind readable content; interactive Liquid Glass belongs on controls.
 private struct ProbeReadableSurface: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityContrast) private var contrast
+    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
@@ -147,7 +147,7 @@ private struct ProbeGlassButton: View {
     let symbol: String
     let action: () -> Void
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityContrast) private var contrast
+    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
