@@ -188,3 +188,39 @@ SDK-license acceptance, device installation, store/release or server action occu
   pairing, system settings, certificates or real credentials were involved.
 - Tested EXE SHA-256:
   `f2b5a7fe549e6fed512c7098aca13399ceb682ce331865109adaf6140edd0400`.
+
+## Android sender build and first BLE diagnostic result — 2026-11-04
+
+Built and run on a Mac host with the pinned tools installed on an external volume:
+Android SDK platform 37.2 (revision 2), build tools 37.0.0, Gradle 9.8.2 (distribution
+SHA-256 matched the published value). SDK licenses were accepted by the user for this
+installation. No signing identity exists; the unsigned debug APK was signed locally
+with a throwaway debug keystore only so it could be installed. It is not a release
+artifact and the key must not be reused.
+
+- `:app:assembleDebug` PASS (one existing `setDecorFitsSystemWindows` deprecation
+  warning). `:app:lintDebug` NOT RUN.
+- First launch on a Xiaomi 2405CRPFDL (wireless adb) crashed in
+  `MainActivity.onCreate` with a NullPointerException: `window.insetsController` was
+  read before `setContentView` created the decor view. Fixed by moving the
+  `setSystemBarsAppearance` call after `setContentView`; nothing else changed. After
+  the fix the app stayed in the foreground with no new crash-buffer entries.
+
+User-reported diagnostic output (screenshots; command line, host and timestamps were
+not captured). `PROCESS_INTEGRITY_RID=8192` matches the Windows probe at Medium
+integrity, so this is attributed to the Windows `--ble-test` receiver:
+
+| Reported line | Meaning recorded here |
+|---|---|
+| `SYNTHETIC_GATT_WRITE_READ_PASS` | One fixed public-value write/read round trip succeeded |
+| `SCANNING_DIAGNOSTIC_SERVICE_10_SECONDS` | Scan window for the diagnostic service was 10 s |
+| `NOTIFICATION_MTU_FRAGMENTATION_NOT_TESTED` | Notifications and MTU fragmentation remain untested |
+| `PHASE0_PUBLIC_UNAUTHENTICATED_BLE_TEST`, `NO_PEER_IDENTITY_OR_HARDWARE_VERIFIED`, `NOT_AUTHENTICATION_NOT_PRODUCTION_PROTOCOL` | No authentication, peer identity or hardware verification |
+| `REAL_SECRET_TRANSFER_DISABLED`, `RDP_INPUT_UNSUPPORTED` | Real-secret transfer and RDP input stay disabled/unsupported |
+
+This is the first recorded Android-peripheral to Windows-Central exchange. It
+supersedes the earlier `NO_DIAGNOSTIC_SENDER` result only for that single fixed-value
+round trip. It does not prove proximity, authentication, StrongBox/key behavior,
+MTU/notification handling, disconnect/permission/radio-off behavior, other adapters
+or OS versions, Android lint, TalkBack/large-font/visual layout, or any production
+transfer. The Phase 0 gate remains open.

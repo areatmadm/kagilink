@@ -54,8 +54,6 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         window.setDecorFitsSystemWindows(false)
-        window.insetsController?.setSystemBarsAppearance(0,
-            WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(GlassUI.dp(this@MainActivity, 24), GlassUI.dp(this@MainActivity, 24),
@@ -88,6 +86,8 @@ class MainActivity : Activity() {
             insets
         }
         setContentView(scroll)
+        window.insetsController?.setSystemBarsAppearance(0,
+            WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS)
         val filter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
         // Bluetooth broadcasts can originate in a privileged Bluetooth process.
         // This protected system action is used only to stop, never to authorize.
