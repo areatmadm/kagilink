@@ -61,3 +61,42 @@ filenames and local workspace path for compatibility; none is a product display
 name. Update Cargo repository metadata and the probe output filename/display
 resources instead. No deployed app bundle IDs or external signing identities
 exist. Do not rename the earlier private archive or rewrite historical records.
+
+## D009 — Local workspace relocation, 2026-11-04
+
+The local workspace is now S:\project\kagilink after the folder move. This
+supersedes D008's local-path compatibility choice only. Keep both Git histories,
+origin URLs, private-memory isolation, internal crate names and Phase 0 scope.
+Build scripts resolve from their own location and require no hardcoded old path.
+Post-move validation evidence is recorded in IMPLEMENTATION_STATUS.md.
+
+## D010 — Native Phase 0 diagnostic targets, 2026-11-04
+
+Prepare Windows Central, Android/iOS Peripheral and macOS Central/Peripheral
+feasibility sources without advancing to production native apps. Diagnostic UUIDs
+and fixed public request/reply values are isolated from PROTOCOL.md; never accept
+secret input, treat a fixed reply as authentication or connect this path to input.
+Keep one explicit-start attempt, a 60-second deadline and terminal cleanup. Native
+hardware labels stay unverified until actual protected key operations are tested.
+
+Use SwiftUI/Core Bluetooth shared source in apps/apple with distinct unsigned
+iOS/iPadOS 18+ and Apple Silicon/macOS 14+ targets. Build the iOS target with the
+explicit iOS SDK 27.1 for iPhone Duo. Use Kotlin/platform Android Views/BLE,
+Android 14/API 34+ with the latest stable Android SDK (currently platform 37.2),
+with signing disabled. These provisional diagnostic IDs do not finalize production
+signing identity. The mobile minimum OS versions are required support floors. Android
+tool versions and generated locks are reviewed separately from security-core
+selection. See DEPENDENCY_REVIEW.md and PHASE0_BLE_PROBE.md.
+
+Keep native builds and device evidence distinct from static source/project tests.
+Windows CLI can be built here; Android SDK and Apple build/device validation remain
+pending on a suitable host. No account, certificate, SDK license or publication
+action is automated. Phase 0 exit criteria remain unchanged and unmet.
+
+Mobile screens use Liquid Glass styling. Use Apple's native glass API only on
+supported OS versions, with a system-material fallback on iOS 18; Android uses
+platform-rendered translucent glass styling without importing an Apple framework
+or third-party UI SDK. Respect accessibility contrast, reduced transparency and
+text scaling. The visual material is not a claim of authentication or protection.
+Adaptive layouts must handle iPhone Duo inner/outer displays, resizing, safe areas
+and vertical system bars. Actual rendering and device behavior remain unverified.

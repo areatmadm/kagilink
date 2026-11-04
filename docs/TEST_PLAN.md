@@ -16,6 +16,21 @@ The local test commands and actual outcomes are in IMPLEMENTATION_STATUS.md.
   normal-user feasibility criterion. --self-input refuses non-Medium execution.
 - Probe executable: target/phase0/kagilink-phase0-probe.exe; --help and --version
   report KagiLink without accessing BLE, private memory or input APIs.
+- `tests/windows/test-probe.ps1`: help/version/policy and rejection of unknown or
+  extra arguments. Runs without BLE scanning, focus changes or input injection.
+- `tests/native/test_probe_contract.py`: cross-language diagnostic UUID/value
+  consistency, default ATT budget, Android permissions/no backup, Apple privacy/
+  sandbox plists and Xcode target/file references. Static checks are not compilation.
+- `--ble-test` is opt-in and Medium-only; writes/reads fixed public values on a
+  separate diagnostic service. No real exchange has been executed here. See
+  PHASE0_BLE_PROBE.md for its contract, limits and cross-OS failure matrix.
+- Android Gradle dependency resolution/locking can run without an SDK; it must not
+  be reported as Android compilation, lint, device execution or security validation.
+- Source checks also cover Android 14/API 34 floor, selected stable SDK pins,
+  runtime dependency allowlist, iOS 18 deployment and SDK 27.1 build enforcement.
+- `sh apps/apple/test-build-script.sh`: synthetic `uname`/`xcrun`/`xcodebuild`
+  fixtures test exact device/simulator SDK selection, unsigned invocation and
+  refusal of wrong SDK/unknown arguments. These mocks never compile an Apple app.
 
 ## Manual native feasibility matrix
 
@@ -33,6 +48,10 @@ API result and synthetic outcome. Avoid collecting usernames or device addresses
 | iOS/macOS required hardware | Actual protected key generation/use plus denial paths | NOT RUN |
 | Android StrongBox | Positive device, missing hardware, thrown failure, wrong level, denied auth | NOT RUN |
 | Windows TPM/RAM | Verify 2.0/key use or accurately labelled RAM mode | NOT RUN beyond provider probe |
+| Android 14 and latest stable Android | SDK build/lint, permissions, foreground/radio lifecycle and glass rendering | NOT RUN |
+| iOS 18 material fallback | Usable contrast, text scaling, controls and foreground cleanup | NOT RUN |
+| Native Apple Liquid Glass | Supported OS rendering, reduced transparency and VoiceOver | NOT RUN |
+| iPhone Duo, iOS SDK 27.1 | Inner/outer display resize, rotation, safe areas, vertical system bars and large text | NOT RUN |
 
 ## Phase 1+ mandatory tests
 

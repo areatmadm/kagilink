@@ -1,0 +1,2 @@
+# Keep scripts executable through sh on Mac after Windows checkouts.
+*.sh text eol=lf

@@ -5,3 +5,8 @@
 *.obj
 *.ilk
 .DS_Store
+**/.gradle/
+**/build/
+apps/android/local.properties
+**/xcuserdata/
+**/*.xcuserstate

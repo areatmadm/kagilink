@@ -34,7 +34,9 @@ were updated; source homepage now points to the existing official domain.
 - Current docs, source links, Cargo metadata and memory gate/setup point at the
   new repositories. The memory gate rejects historical repository metadata.
 - Internal crate areatm-phase0-model, core/phase0-model, source filenames and the
-  local workspace path retain their existing identity. No external FFI/package
+  local workspace path initially retained their existing identity. The folder
+  subsequently moved to S:\project\kagilink; see the relocation verification in
+  IMPLEMENTATION_STATUS.md. No external FFI/package
   IDs, bundle IDs, store apps or deployed protocol identifiers exist to migrate.
 - Windows output changes to kagilink-phase0-probe.exe, with KagiLink title, CLI
   help/version and executable product/copyright metadata. Build path remains
@@ -69,7 +71,7 @@ paths. Existing hardware/input limitations remain explicitly incomplete.
 
 ## Handoff
 
-Use the existing local workspace; its folder name is retained. Fetch/pull from
+Use the existing local workspace at S:\project\kagilink. Fetch/pull from
 the updated origin URLs. Read AGENTS.md first, then README.md and
 IMPLEMENTATION_STATUS.md. Only authenticated areatmadm may pass the updated memory
 gate and read the independent private handoff. Historical private records and old

@@ -5,7 +5,7 @@ Phase 0 is IN PROGRESS. Real-secret transfer is disabled. This is not release re
 ## Environment
 
 Historical initial workspace: empty S:\project\pwreceiver; not a Git repository.
-The local folder name is retained for compatibility; current product is KagiLink.
+Current workspace: S:\project\kagilink, verified after the local folder move.
 Source publication is separate from a product release. The source/memory Git split
 uses a clean source history, an independent ignored private repository at
 shared/ai/, and a private archive for earlier mixed history. See AI_MEMORY.md.
@@ -24,9 +24,9 @@ Community and Windows SDK 10.0.22621.0 / 10.0.26100.0 detected.
 
 | Phase | State | Evidence / remaining work |
 |---|---|---|
-| 0 | In progress | Official review, policy/docs and synthetic prototypes; native/device validation pending |
+| 0 | In progress | Native diagnostic sources added; Windows CLI built, mobile/Apple SDK and device validation pending |
 | 1 | Not started | Dependency/suite gate unresolved; no production PAKE/HKDF/AES/zeroization |
-| 2 | Not started | No end-to-end BLE transport |
+| 2 | Not started | No production BLE transport; separate fixed-public-value diagnostic source only |
 | 3 | Not started | No verified StrongBox/SE/TPM key integration |
 | 4 | Not started | No native product UI/vault |
 | 5 | Unsupported/pending | RDP/CredUI disabled; no safe credential input evidence |
@@ -109,3 +109,82 @@ GitHub confirms an empty set of private-memory/original-prompt paths in the publ
 tree. Source candidate files and local links passed review with no credential
 pattern matches; this is a bounded check, not a guarantee against every secret
 format. Changed file list and handoff/compatibility notes: MIGRATION_KAGILINK.md.
+
+## Local folder relocation verification — 2026-11-04
+
+- Source and independent private-memory Git roots resolve under S:\project\kagilink;
+  both worktrees were clean before this verification. Both `git fsck --full`
+  checks passed, and origin URLs retain the KagiLink repository names.
+- Source still ignores shared/ai/, tracks no files there and contains no gitlinks.
+- Rust tests: 11 passed, including a fresh build in target/relocation-check;
+  fmt and clippy passed offline with the locked dependency set.
+- Memory-gate mock tests: all 10 passed. Actual owner/private-repository access
+  passed on a network-enabled retry after the restricted runner denied access.
+- Windows probe rebuilt from the new path with MSVC /W4 /WX. Help, version and
+  policy exited 0. Inventory exited 2 at Low integrity (RID 4096), with the same
+  limited LE/Central/provider diagnostics; this remains incomplete feasibility.
+- No active source/build-script reference to the old absolute workspace path
+  was found. Historical migration notes remain preserved.
+- Rust reported the existing hard-link-to-copy cache fallback; checks succeeded.
+  The restricted shell also emitted an InitializeDefaultDrives warning without
+  preventing these checks. Interactive input, real devices and RDP were not tested.
+
+## Native feasibility targets — 2026-11-04
+
+Windows Central, Android/iOS foreground Peripheral and macOS Central/Peripheral
+diagnostic sources now use the isolated fixed-public-value service documented in
+PHASE0_BLE_PROBE.md. This is Phase 0 work, not completion of the native product
+apps or approval to enable real-secret transfer. No PAKE, key, vault, credential
+input, pairing code, peer authentication or production wire protocol was added.
+
+Required mobile floors are Android 14/API 34 and iOS/iPadOS 18. Android selects
+the latest stable platform package 37.2 (revision 2), target 37, build tools 37.0.0,
+AGP 9.5.0 and Gradle 9.8.2 with built-in Kotlin. The Apple iOS target selects SDK
+27.1 explicitly for iPhone Duo, while retaining iOS 18 as its deployment floor.
+Native Apple glass is guarded for supported OS versions; iOS 18 uses system
+material and Android uses platform glass styling. Adaptive/accessibility code is
+source-only until device rendering is checked. macOS remains Apple Silicon/macOS 14+.
+
+| Check for native diagnostic changes | Actual outcome |
+|---|---|
+| Windows MSVC C++20 /W4 /WX build | PASS, new diagnostic client compiled |
+| Windows noninteractive CLI regression | PASS, 6 checks; no scan or input injection |
+| Direct `--ble-test` in restricted runner | Safe refusal at Low RID 4096, exit 2; no scan |
+| Rust locked/offline model tests | PASS, 11 tests; fmt and clippy also passed |
+| Memory-access gate mock suite | PASS, 10 cases |
+| Native source/project consistency | PASS, 7 checks; UUIDs, permissions, locks, mobile floors/SDK settings, glass guards, Apple plists/project references |
+| Public Markdown local links | PASS, final integrated check across 31 files, including OS READMEs; private-memory paths excluded |
+| Apple build-helper shell checks | PASS, shell syntax and 4 synthetic-tool cases for SDK selection/unsigned invocation/rejection; no Xcode compiler invoked |
+| Android final Gradle project/dependency configuration | PASS, Gradle 9.8.2 root/app locks generated; no unresolved dependency rows; offline runtime resolution passed without lock rewriting |
+| Android exact runtime advisory lookup | Zero public GitHub advisory matches for Kotlin stdlib 2.2.10 and annotations 13.0; scoped lookup only, not a full audit |
+| Android APK compilation/lint/device | NOT RUN, Android SDK absent on this host |
+| Apple compilation/signed sandbox/device | NOT RUN, Xcode and Apple devices unavailable on this host |
+| Liquid Glass appearance/accessibility/Duo folding | NOT RUN; source checks are not visual/device evidence |
+| Actual cross-OS GATT exchange/notifications/MTU/disconnect | NOT RUN |
+| New GitHub Actions Windows/static/shell-fixture checks | Prepared locally; not pushed or executed remotely |
+
+The diagnostic can be spoofed/replayed and cannot prove proximity or device
+integrity. Apple peripheral disconnect observation is incomplete; abandoned
+public state expires. Device access/consent, cleanup timing and fixed reply delivery
+still require real hardware. The receiving Windows executable remains a research
+CLI, not a completed receiver product UI. No account/certificate/provisioning,
+SDK-license acceptance, device installation, store/release or server action occurred.
+
+## Windows executable smoke test — 2026-11-04
+
+- Rebuilt the EXE with MSVC C++20 /W4 /WX. Product metadata reports KagiLink,
+  AreaTM, 0.0.0-phase0 and kagilink-phase0-probe.exe.
+- Noninteractive CLI suite: 6 checks passed in both restricted and normal-user
+  execution. Negative cases now require refusal/usage output and reject diagnostic
+  scan/input execution markers, rather than checking exit code alone.
+- Normal-user read-only inventory ran at Medium integrity (RID 8192), exit 0:
+  LE/Central capabilities reported and TPM provider opened. No TPM key or TPM 2.0
+  verification occurred. This adds normal-user query evidence to the earlier
+  restricted-runner observations; it does not complete the Phase 0 gate.
+- Normal-user `--ble-test` ran for 10,191 ms, reported NO_DIAGNOSTIC_SENDER and
+  exited 2. This is the expected unavailable result with no diagnostic sender
+  observed; no GATT exchange, peer authentication or successful transfer is proven.
+- No interactive self-input, credential UI or RDP test was run. No elevation,
+  pairing, system settings, certificates or real credentials were involved.
+- Tested EXE SHA-256:
+  `f2b5a7fe549e6fed512c7098aca13399ceb682ce331865109adaf6140edd0400`.

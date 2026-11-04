@@ -29,4 +29,18 @@ hardware resident. No host trust claim follows just from a peer's UI label.
 `core/phase0-model` is a dependency-free simulation, not the future security core.
 Its events are deliberately named simulate_* and never accept secret payloads.
 Its assembler contains public test bytes only, and clear() is not zeroization.
-Windows probe is a standalone feasibility executable with no BLE data transport.
+Native Phase 0 probes use a separate unauthenticated diagnostic service to exchange
+only two fixed 16-byte public values. Windows is a standalone Central executable;
+Android/iOS are foreground Peripherals; macOS supports either role. SwiftUI Apple
+targets share code in apps/apple; Android uses platform Views/BLE without AndroidX.
+These are feasibility probes, not native product UI or the production BLE transport.
+No diagnostic event is connected to the Rust model as authentication/approval.
+See PHASE0_BLE_PROBE.md for its deliberately separate contract and limitations.
+
+Mobile support floors are Android 14/API 34 and iOS/iPadOS 18. Android's compile
+SDK tracks the current stable SDK (pinned platform 37.2 for this change); Apple's
+iOS target requires SDK 27.1 to opt into iPhone Duo layout behavior. These build
+requirements do not establish real-device support. Native Liquid Glass on supported
+Apple OS versions falls back to system materials on iOS 18, while Android renders
+its glass appearance with platform UI. Appearance stays separate from BLE/security
+state, and adaptive layouts must retain usable controls at large text sizes.

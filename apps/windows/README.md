@@ -5,6 +5,23 @@ Rejects non-medium-integrity input tests. Read-only inventory can run at other
 integrities but reports diagnostic-only and exits 2. No installer, service, driver, elevation,
 clipboard, vault, PAKE, arbitrary payload or arbitrary target input.
 
+`--ble-test` is a separate opt-in, unauthenticated public diagnostic GATT exchange,
+not production transport; see [cross-OS instructions](../../docs/PHASE0_BLE_PROBE.md).
+With exactly one foreground Android/Apple probe advertising, run from a normal
+Medium-integrity desktop:
+
+```powershell
+.\target\phase0\kagilink-phase0-probe.exe --ble-test
+```
+
+This scans a diagnostic service for 10 seconds, refuses ambiguous observed senders,
+then writes and reads one fixed 16-byte public value within a 60-second deadline.
+It prints no peer names/addresses or received bytes. Exit 0 means only exact
+synthetic GATT response verification; exit 2 means blocked/failed/incomplete.
+No pairing, retry, arbitrary payload, credential target or hardware trust exists.
+GATT access from this unpackaged console may fail on consent/packaging requirements;
+report that result instead of changing integrity or system protections.
+
 From repository root:
 
 ```powershell

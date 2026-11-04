@@ -17,3 +17,19 @@ jobs:
       - name: Check private-memory identity gate with mocks
         shell: pwsh
         run: ./tests/security/test-ai-memory-gate.ps1
+      - name: Check native diagnostic source and project consistency
+        run: python3 tests/native/test_probe_contract.py
+      - name: Check Apple SDK selection with synthetic command fixtures
+        run: sh apps/apple/test-build-script.sh
+  windows-probe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Build normal-user synthetic probe
+        shell: pwsh
+        run: ./apps/windows/build-probe.ps1
+      - name: Check CLI without scanning or injecting input
+        shell: pwsh
+        run: ./tests/windows/test-probe.ps1

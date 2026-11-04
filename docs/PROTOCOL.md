@@ -2,6 +2,9 @@
 
 No production wire protocol or cipher suite is finalized. No mock event constitutes
 cryptographic authentication. Phase 0 model fields are NOT a wire specification.
+PHASE0_BLE_PROBE.md defines a separate fixed-public-value diagnostic service only.
+Its UUIDs and unauthenticated messages MUST NOT be used for production data or
+treated as this protocol's handshake, confirmation or approved transfer.
 
 ## Required handshake
 

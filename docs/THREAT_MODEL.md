@@ -5,6 +5,17 @@ session keys, transient plaintext, transfer approval and selected input target.
 Trust boundaries: BLE peer, native/core ABI, hardware API, app storage, input API,
 and receiving OS. All advertisements and incoming bytes are untrusted.
 
+The Phase 0 native diagnostic is unauthenticated and deliberately exchanges only
+fixed public values on isolated UUIDs (PHASE0_BLE_PROBE.md). It can be spoofed,
+replayed or interrupted; success is not peer identity, proximity or trust evidence.
+It must never accept credentials or forward data into input APIs. Transient routing
+identifiers are not logged. The Apple peripheral prototype cannot immediately
+observe all disconnects; its public state expires and is not production cleanup.
+Liquid Glass surfaces and hardware capability labels are visual information only;
+they must never imply verified peer identity, encryption or a protected session.
+Reduced transparency, readable contrast and visible terminal errors are required
+so styling cannot hide a denial/unsupported state on any supported display size.
+
 | Threat | Required control | Remaining limitation |
 |---|---|---|
 | BLE eavesdropping/MITM/offline code guessing | Reviewed PAKE, explicit confirmation, bound context | Six digits permit online guesses; receiver-wide throttling needed |

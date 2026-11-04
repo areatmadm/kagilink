@@ -1,0 +1,7 @@
+{
+  "purpose": "PUBLIC_UNAUTHENTICATED_PHASE0_DIAGNOSTIC_ONLY",
+  "service": "7d9a0001-6f8e-4d52-9b91-89c767b6e201",
+  "characteristic": "7d9a0002-6f8e-4d52-9b91-89c767b6e201",
+  "request": "KagiLink-P0-PING",
+  "response": "KagiLink-P0-PONG"
+}

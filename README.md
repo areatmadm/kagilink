@@ -4,8 +4,16 @@ KagiLink는 사용자가 승인한 비밀 문자열을 가까운 컴퓨터에 �
 일회성 암호화 전달하는 AreaTM의 Apache-2.0 오픈소스 프로젝트입니다.
 공식 사이트: https://key.minori.in. [공개 저장소](https://github.com/areatmadm/kagilink).
 
-**현재: Phase 0 연구용. 실제 비밀번호 전송, 저장소, PAKE, BLE 전송 및 RDP
+**현재: Phase 0 연구용. 실제 비밀번호 전송, 저장소, PAKE, 제품용 BLE 전송 및 RDP
 자동 입력은 구현/활성화되어 있지 않습니다.**
+
+OS별 네이티브 BLE 시험판 소스가 추가되었습니다. Windows 수신기와 Android·
+iOS/iPadOS 송신기, macOS 송수신기는 공개된 고정 문자열만 교환하도록 제한됩니다.
+제품 앱이 아니며 플랫폼별 실제 검증 상태는 [구현 현황](docs/IMPLEMENTATION_STATUS.md),
+빌드·기기 시험 순서는 [BLE 시험판 안내](docs/PHASE0_BLE_PROBE.md)를 따르세요.
+모바일 요구사항은 Android 14 이상과 iOS/iPadOS 18 이상입니다. Android는 최신
+안정 SDK 기준, iOS는 iPhone Duo 대응을 위해 SDK 27.1로 빌드합니다. 두 모바일
+화면에 Liquid Glass 스타일을 적용하며, 기기별 렌더링·접근성 검증은 남아 있습니다.
 
 Windows 보안 업데이트의 자격 증명 입력 제한과 SPAKE2 구현 선정 문제가
 출시 전제조건입니다. 수신 PC가 감염되면 복호화된 비밀번호가 노출될 수 있습니다.

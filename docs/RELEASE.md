@@ -4,6 +4,16 @@ Pre-release blockers: Phase 0 gates, complete core/native apps, independent secu
 review, real devices, input safety and accurate support matrix. A runnable probe
 is not a password-transfer product and must not be marketed as one.
 
+Native diagnostic projects in apps/android and apps/apple are configured for unsigned builds.
+Their provisional Phase 0 IDs are not product release identity. Required mobile
+floors are Android 14 and iOS/iPadOS 18; Android must use the current stable SDK,
+and iOS builds must use SDK 27.1 for iPhone Duo. These requirements do not prove
+device support. Do not publish these as credential-transfer applications.
+Actual Android SDK and Apple builds, locks on those SDKs, signed entitlement
+behavior and real-device interoperability remain release blockers.
+Liquid Glass/material fallbacks, contrast/reduced transparency, large text and
+iPhone Duo inner/outer display layout must pass visual/device QA before release.
+
 Prepare GitHub Actions with least-privilege permissions, reviewed commit-pinned
 actions, pinned toolchains/dependencies and locked builds. SBOM, third-party
 licenses/NOTICE, SHA-256, Sigstore/Cosign verification, build provenance and

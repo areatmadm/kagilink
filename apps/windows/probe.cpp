@@ -7,6 +7,7 @@
 #include <winrt/Windows.Devices.Bluetooth.h>
 #include <iostream>
 #include <string_view>
+#include "ble-probe.h"
 
 constexpr bool real_secret_transfer_enabled = false;
 constexpr wchar_t synthetic[] = L"KagiLink-SYNTHETIC-ONLY-42";
@@ -143,7 +144,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (argc == 2 && (std::wstring_view(argv[1]) == L"--help" || std::wstring_view(argv[1]) == L"-h")) {
         std::cout << "KagiLink Phase 0 probe by AreaTM\n"
-                     "Usage: kagilink-phase0-probe.exe --inventory | --policy | --self-input | --version | --help\n"
+                     "Usage: kagilink-phase0-probe.exe --inventory | --ble-test | --policy | --self-input | --version | --help\n"
                      "Synthetic-only; no arbitrary password or target arguments supported.\n";
         return 0;
     }
@@ -162,8 +163,9 @@ int wmain(int argc, wchar_t** argv) {
         std::cout << "REFUSED_NOT_NORMAL_MEDIUM_INTEGRITY\n";
         return 2;
     }
+    if (argc == 2 && std::wstring_view(argv[1]) == L"--ble-test") return phase0_ble::run();
     if (argc == 2 && std::wstring_view(argv[1]) == L"--self-input") return self_input();
-    std::cout << "Usage: kagilink-phase0-probe.exe --inventory | --policy | --self-input | --version | --help\n"
+    std::cout << "Usage: kagilink-phase0-probe.exe --inventory | --ble-test | --policy | --self-input | --version | --help\n"
                  "Synthetic-only; no arbitrary password or target arguments supported.\n";
     return 2;
 }
