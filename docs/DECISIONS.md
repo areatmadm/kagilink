@@ -200,3 +200,11 @@ independent review of the exact locked versions exists, and Phase 0 exit criteri
 stays open. Verification (local, 2026-11-04): 29 transport unit tests and 38 handshake tests pass (debug
 build); fmt and clippy -D warnings clean. This is synthetic-test evidence only; no audit,
 fuzzing, side-channel or memory review has been done.
+## D015 — Windows main is the reference branch, 2026-11-04
+
+Owner instruction (relayed by the Windows session and confirmed by the owner in the
+cloud session): the Windows session's `main` is the top-level reference for KagiLink.
+Other platform sessions align to Windows `main` — `core/kagilink-core`,
+`docs/PROTOCOL.md` and `docs/DECISIONS.md` — and on conflict the Windows version wins.
+Phase 1 core has no FFI, and porting to other platforms has not been started or
+authorised by this decision. Policy and security requirements in AGENTS.md are unchanged.
