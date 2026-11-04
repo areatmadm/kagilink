@@ -60,6 +60,21 @@ offline/platform security limitations are unchanged; no integrity bypass added.
 Executed checks and CI results are recorded in IMPLEMENTATION_STATUS.md. Private
 hardware-backed auth, real BLE exchange, secure input and RDP are still unverified.
 
+Migration source commit: ac4fc2f. GitHub Actions run 41762980276 succeeded at
+https://github.com/areatmadm/kagilink/actions/runs/41762980276. The existing workflow
+ID 406436318 remains unchanged. GitHub compare confirms pre-migration main is an
+ancestor (ahead, not diverged). Post-push IDs, visibility and collaborator/admin
+permissions match baseline; the public tree has no private-memory/original-prompt
+paths. Existing hardware/input limitations remain explicitly incomplete.
+
+## Handoff
+
+Use the existing local workspace; its folder name is retained. Fetch/pull from
+the updated origin URLs. Read AGENTS.md first, then README.md and
+IMPLEMENTATION_STATUS.md. Only authenticated areatmadm may pass the updated memory
+gate and read the independent private handoff. Historical private records and old
+commits retain earlier names as history; do not rewrite or republish them.
+
 ## Changed source files
 
 | Area | Files |

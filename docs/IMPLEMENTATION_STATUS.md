@@ -81,7 +81,9 @@ Repository rename completed in place: same repository IDs, original main branch
 HEADs and public/private visibility verified immediately after rename. Existing
 history is preserved; no reset, replacement repository or force push. See
 MIGRATION_KAGILINK.md for scope, compatibility decisions and unimplemented targets.
-Current build/test/CI evidence will be recorded here after regression checks.
+Migration commit ac4fc2f preserves the original source HEAD as an ancestor.
+Repository IDs, default branches, permissions and owner-only collaborator lists
+were rechecked through GitHub after the push; no visibility changes occurred.
 
 | Migration regression check | Result |
 |---|---|
@@ -97,8 +99,13 @@ Current build/test/CI evidence will be recorded here after regression checks.
 | New probe --self-input | Same safe refusal at Low integrity, exit 2; no keystrokes injected |
 | Source/private pre-migration commit ancestry | PASS, both original HEADs remain ancestors |
 | Source history/ignore isolation | PASS, no private-memory/original-prompt paths or gitlinks |
-| Renamed-repository GitHub Actions | Pending first migration push |
+| Renamed-repository GitHub Actions | PASS, run 41762980276 on ac4fc2f; original workflow ID 406436318 preserved |
 
 Local Rust tooling reported an incremental-cache hard-link fallback to copying;
 all commands exited successfully. Real-device, Medium-integrity input and RDP
 support remain unverified. No additional production security capability is claimed.
+
+GitHub confirms an empty set of private-memory/original-prompt paths in the public
+tree. Source candidate files and local links passed review with no credential
+pattern matches; this is a bounded check, not a guarantee against every secret
+format. Changed file list and handoff/compatibility notes: MIGRATION_KAGILINK.md.
