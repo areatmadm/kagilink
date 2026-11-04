@@ -208,3 +208,10 @@ Other platform sessions align to Windows `main` — `core/kagilink-core`,
 `docs/PROTOCOL.md` and `docs/DECISIONS.md` — and on conflict the Windows version wins.
 Phase 1 core has no FFI, and porting to other platforms has not been started or
 authorised by this decision. Policy and security requirements in AGENTS.md are unchanged.
+
+Succession (owner instruction, 2026-11-04): while the Windows session is offline, the
+cloud session is the reference (2nd), then the macOS session (3rd). If none of the three
+is available, work waits in standby. The owner propagates this to the other sessions
+directly; this record does not message them. Succession decides which sessions' `main`
+content is authoritative; it does not authorise real-secret transfer, a phase advance or
+any change to AGENTS.md policy.
