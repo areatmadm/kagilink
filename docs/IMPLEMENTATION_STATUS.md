@@ -10,6 +10,12 @@ uses a clean source history, an independent ignored private repository at
 shared/ai/, and a private archive for earlier mixed history. See AI_MEMORY.md.
 Original conversation prompts/transcripts are excluded from the source snapshot.
 No release or binary was published.
+
+- Source: https://github.com/areatmadm/pwreceiver — PUBLIC, fresh source-only history.
+- Memory: areatmadm/pwreceiver-ai-memory — PRIVATE, only owner listed as collaborator.
+- Earlier mixed history: areatmadm/pwreceiver-private-archive — PRIVATE.
+- Source full local object history and remote tree contain no memory/original-prompt
+  paths; no submodule/gitlink. Earlier local Git metadata preserved under ignored target/.
 Rust/cargo 1.92.0, MSVC toolchain target; fmt/clippy installed. Visual Studio 2022
 Community and Windows SDK 10.0.22621.0 / 10.0.26100.0 detected.
 
@@ -38,8 +44,8 @@ Community and Windows SDK 10.0.22621.0 / 10.0.26100.0 detected.
 | windows-probe.exe --policy | PASS, real-secret transfer disabled and RDP unsupported |
 | windows-probe.exe --inventory | INCOMPLETE, diagnostic-only restricted process; native exit 2 |
 | windows-probe.exe --self-input | BLOCKED safely by integrity guard; no input performed |
-| GitHub-hosted Phase 0 CI | PASS, run 41759785484: fmt, clippy, 11 synthetic unit tests |
-| Private-memory identity gate | PASS, 9 mocked cases; actual areatmadm access verified |
+| GitHub-hosted clean-source CI | PASS, run 41760663274: fmt, clippy, 11 model tests, 9 memory-gate cases |
+| Private-memory identity gate | PASS, 9 mocked cases; actual owner allow and unavailable-auth deny verified |
 | Real devices / crypto / interoperability / fuzzing | NOT RUN |
 
 Inventory observed PROCESS_INTEGRITY_RID=4096 (Low), BLE LE and Central capability
