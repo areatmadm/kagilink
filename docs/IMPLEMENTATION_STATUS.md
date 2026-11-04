@@ -218,6 +218,12 @@ integrity, so this is attributed to the Windows `--ble-test` receiver:
 | `PHASE0_PUBLIC_UNAUTHENTICATED_BLE_TEST`, `NO_PEER_IDENTITY_OR_HARDWARE_VERIFIED`, `NOT_AUTHENTICATION_NOT_PRODUCTION_PROTOCOL` | No authentication, peer identity or hardware verification |
 | `REAL_SECRET_TRANSFER_DISABLED`, `RDP_INPUT_UNSUPPORTED` | Real-secret transfer and RDP input stay disabled/unsupported |
 
+The same output was reported a second time, confirmed by the user as coming from a
+Samsung SM-S921N running the same debug APK (installed over wireless adb; foreground
+launch with no crash-buffer entries). The screenshot's last line was cut off, so
+`NOTIFICATION_MTU_FRAGMENTATION_NOT_TESTED` is only partly visible there, and the
+device-to-line mapping rests on the user's statement, not captured logs.
+
 This is the first recorded Android-peripheral to Windows-Central exchange. It
 supersedes the earlier `NO_DIAGNOSTIC_SENDER` result only for that single fixed-value
 round trip. It does not prove proximity, authentication, StrongBox/key behavior,
