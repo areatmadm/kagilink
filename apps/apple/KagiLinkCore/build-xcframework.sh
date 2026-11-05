@@ -13,9 +13,6 @@ done
 # Deployment floors: iOS 18, macOS 14. panic=abort per docs/FFI_DESIGN.md for release packaging.
 export IPHONEOS_DEPLOYMENT_TARGET=18.0 MACOSX_DEPLOYMENT_TARGET=14.0
 export CARGO_PROFILE_RELEASE_PANIC=abort
-# The workspace release profile uses lto = "thin"; with rustc 1.92.0 on macOS arm64 that fails to build zeroize 1.9.1
-# ("can't find crate for zeroize_derive"). LTO is an optimisation only, so packaging turns it off locally.
-export CARGO_PROFILE_RELEASE_LTO=off
 args=""
 for t in $targets; do
     (cd "$root" && cargo build -p areatm-kagilink-ffi --release --locked --target "$t")
