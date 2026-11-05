@@ -117,6 +117,15 @@ fragment size could exceed the 256-fragment limit); no implementation change.
 | kagilink.h syntax check with MSVC `cl /W4 /Zs` | PASS (syntax only; no real C/C++ consumer linked) |
 | iOS simulator/device build and tests (macOS session), Android real-device adb run (Android session), coverage-guided fuzzing, FFI tests under qemu and on mobile targets | NOT RUN |
 
+### Coverage-guided fuzzing addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `.github/workflows/fuzz.yml` (manual, GitHub-hosted ubuntu, nightly-2026-11-01, cargo-fuzz with libFuzzer + AddressSanitizer), 3 targets: hello_decode, handshake_messages, channel_fragments | First run failed because cargo-fuzz defaulted to a musl target; fixed with `--target x86_64-unknown-linux-gnu` |
+| 60 s smoke run | PASS: 18,182,317 / 519,588 / 105,831 executions, no crash |
+| 900 s run per target | PASS: hello_decode 224,382,468; handshake_messages 5,384,071; channel_fragments 1,227,815 executions; no crash, no assertion failure, no sanitizer report |
+| What this does not show | 15 minutes per target is small. The corpus is not saved between runs, no coverage report was reviewed, and fuzzing finds crashes and violated assertions, not logic or side-channel flaws. FFI functions are not fuzzed yet. The fuzz lockfile resolves some transitive versions independently of the root lockfile |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;

@@ -337,3 +337,16 @@ ManualClock tests, not through the FFI. Not done: symbol visibility, CFI/hardeni
 that test-hooks stays off, independent review of the `unsafe` code. D016 preconditions: 2 (minimal
 FFI crate) met for Windows x86_64 only; 1 (targets) partly (see status file); 3 (coverage-guided
 fuzzing) and a real C/C++ consumer test are open.
+
+
+### D019 correction and fuzzing venue, 2026-11-05
+
+Owner chose GitHub-hosted runners for coverage-guided fuzzing. This corrects D019: long jobs such
+as cargo-fuzz do NOT need the Claude Cloud session. GitHub-hosted Linux runners handle them;
+Claude Cloud stays only a backup if GitHub Actions is unavailable. Fuzzing runs only through
+`.github/workflows/fuzz.yml`, started manually (`workflow_dispatch`): no push or pull_request
+trigger, so fork code never reaches it. Targets are in `core/kagilink-core/fuzz` (own
+workspace and lockfile, audited in core-hardening.yml): `hello_decode`, `handshake_messages`,
+`channel_fragments`. Pinned nightly `nightly-2026-11-01`. D016 precondition 3 is met as
+infrastructure; the amount of fuzzing run so far is recorded in IMPLEMENTATION_STATUS.md and is
+small, not an assurance level.
