@@ -91,7 +91,9 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
   update, deletion and device-loss guidance. Never read other apps' credentials.
 - Windows: portable receiver written in Rust (D022; the Phase 0 C++20/C++/WinRT probe stays as
   a research tool), normal user, Windows BLE GATT, no FFI boundary on Windows. TPM 2.0 use is
-  being studied under D022 and must not claim device integrity it cannot prove.
+  being studied under D022 and must not claim device integrity it cannot prove. Receiver trust policy
+  (D024): TPM claim passes -> proceed and show boot state; TPM present but claim fails -> block;
+  no TPM -> labelled RAM-only mode with a strong warning.
   TPM 2.0 preferred; accurately labelled RAM-only temporary mode allowed.
 - Desktop receivers initially BLE Central, mobile senders Peripheral. Sender
   advertises; receiver scans. The logical receiver still creates/displays the

@@ -485,3 +485,16 @@ Consequences and conditions written down so they are not lost:
   removed for sensitive transfer; AGENTS.md is not changed by this record.
 - Still unchanged from D023: no duty to detect already-installed keyloggers; the boot-state display
   is information, not a verdict.
+
+
+### D024 resolution of the open conflict, 2026-11-05
+
+Owner answer: RAM-only mode stays, with a warning only. Effective policy for a Windows receiver:
+(a) TPM reports a hardware-bound key that passes the checks: proceed, showing boot state;
+(b) a TPM is present but the claim fails or is invalid: BLOCK;
+(c) no TPM is reported or usable: accurately labelled RAM-only mode with a strong, explicit warning
+and the D023 acknowledgment. Honest limit: the phone cannot tell a PC without a TPM from a
+compromised PC that says it has none, so (c) is reachable by anyone controlling the receiver and the
+block in (b) mainly catches faults, not an attacker. The TPM check therefore is a trust signal for
+honest setups, not a security boundary, consistent with D023 (no duty to detect compromise). AGENTS.md
+keeps its RAM-only allowance and gets a pointer to this policy.
