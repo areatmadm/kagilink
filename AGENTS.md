@@ -64,6 +64,13 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
   remote authentication, password servers, telemetry, ads or analytics SDKs.
 - Never request, collect, log, persist or send real passwords, tokens, private keys,
   sessions or memory dumps to agents or external services. Use synthetic data only.
+- Never commit personal identifiers to this PUBLIC repository (D028): real names inside signing
+  identities, Apple/Google account or certificate IDs tied to a person, device UDIDs/serials, personal
+  e-mail addresses, private keys or provisioning material. Scripts take such values from REQUIRED
+  environment variables or untracked local config, never from defaults. CI runs
+  `sh tools/check-no-personal-ids.sh`; run it before every push. Shared private notes go only to
+  `shared/ai/`. If something leaks, stop pushing, tell the owner, and do not rewrite shared history
+  without the owner's approval.
 - No clipboard, plaintext files, debug secret output, privilege escalation,
   UIPI/UAC bypass, security desktop access, drivers, services or security disabling.
 - Use reviewed cryptographic libraries, not custom cryptography. Six decimal
