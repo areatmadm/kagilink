@@ -105,6 +105,11 @@ impl ReceiverSession {
     }
 
     fn kill(&mut self, reason: Error) {
+        // An attempt that already sent M3 and is still open counts as a failure (D026). Without this,
+        // dropping it here (expiry) would silently take the open failure out of the displayed count.
+        if matches!(&self.attempt, Some(a) if matches!(a.stage, Stage::AwaitM4(_))) {
+            self.failures = self.failures.saturating_add(1);
+        }
         self.code = None; // zeroized on drop
         self.attempt = None;
         self.state = State::Dead(reason);

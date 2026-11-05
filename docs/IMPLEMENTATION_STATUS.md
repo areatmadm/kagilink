@@ -659,3 +659,18 @@ it offers to retry with the SAME code, so the budget can be checked across attem
 (SetMaintainConnection(false) + Close), which may shorten the 3 s drop; UNVERIFIED on a radio. Android fault modes (PR #22) are installed and
 not yet run. Android's fault code is runtime-gated by the debuggable flag (present in release builds, disabled there); it must become
 compile-time-gated before any product build.
+
+### Fault injection on the real radio: Galaxy S24 to Windows receiver, 2026-11-06 (reported)
+
+Android session report; the owner supplied the PC outputs and the session matched them with the phone log (KLV1) by order and time. There is no
+direct key between the two logs, so the pairing is an inference. Results (both GATT modes where noted): garbage M2 -> `Core(WrongState)`, budget 0/3
+(expected); drop after M3 -> `Timeout`, budget 1/3 then 2/3 (expected count); skipped chunk and reordered chunk -> `Core(Framing)`, 0/3 (expected;
+the duplicate-chunk run is valid for Indicate only, the Notify run was spoiled by code expiry); M1 left unanswered -> `Timeout`, 0/3 (expected);
+M2 after 6 s -> Transfer OK 30 B in both modes (expected: a delay under the 10 s first-chunk wait is accepted); M2 after 11 s -> `Timeout`, 0/3
+(expected); tampered SECRET fragment -> `Core(Authentication)`, no delivery, budget stays 1/3 (Notify run only; the Indicate run was spoiled by a
+mistyped code). NOT run: tampered M4 (b) on Android, and the same-code repetition to 3/3 with code destruction (the drop-after-M3 series reached
+2/3 before the code expired).
+Defect found by the Android session and fixed here: when the code expired while an attempt abandoned after M3 was still open, the displayed budget
+fell from 2/3 to 1/3. Cause: `kill()` dropped the open attempt without counting it. Fix: `kill()` counts an attempt that is open after M3 (D026); two
+core regression tests. A dropped link after M3 surfaced as `Timeout` (about 10 s wait) rather than `Link(Disconnected)` on Windows for Android;
+not investigated further.
