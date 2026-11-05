@@ -11,7 +11,9 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ArrayAdapter
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import com.areatm.kagilink.spike.Native
 
@@ -23,6 +25,7 @@ import com.areatm.kagilink.spike.Native
 class PeripheralActivity : Activity(), PeripheralSession.Listener {
     private lateinit var codeField: EditText
     private lateinit var notifyBox: CheckBox
+    private var faultSpinner: Spinner? = null
     private lateinit var tagView: TextView
     private lateinit var statusView: TextView
     private lateinit var startBtn: Button
@@ -47,6 +50,14 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
         col.addView(codeField)
         notifyBox = CheckBox(this).apply { text = "Notify + app ACK mode (default: Indicate)" }
         col.addView(notifyBox)
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            col.addView(TextView(this).apply { text = "TEST ONLY fault injection (resets to none after each run):" })
+            faultSpinner = Spinner(this).apply {
+                adapter = ArrayAdapter(this@PeripheralActivity, android.R.layout.simple_spinner_dropdown_item,
+                    PeripheralSession.Fault.values().map { it.label })
+            }
+            col.addView(faultSpinner)
+        }
         startBtn = Button(this).apply { text = "Start (advertise 60 s)"; setOnClickListener { onStartClicked() } }
         col.addView(startBtn)
         tagView = TextView(this).apply { textSize = 48f; gravity = Gravity.CENTER; text = "----" }
@@ -75,7 +86,8 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
         codeField.text.clear()
         startBtn.isEnabled = false
         statusView.text = ""
-        session.start(code, notifyBox.isChecked) // session wipes `code`
+        val fault = PeripheralSession.Fault.values()[faultSpinner?.selectedItemPosition ?: 0]
+        session.start(code, notifyBox.isChecked, fault) // session wipes `code`
     }
 
     override fun onRequestPermissionsResult(rc: Int, perms: Array<out String>, res: IntArray) {
@@ -90,6 +102,7 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
     override fun onFinished(summary: String) {
         runOnUiThread {
             statusView.append(summary + "\n")
+            faultSpinner?.setSelection(0)
             startBtn.isEnabled = true; approveBtn.isEnabled = false; tagView.text = "----"
         }
     }
