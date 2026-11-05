@@ -2,6 +2,7 @@
 # Builds the KL-V1 peripheral spike, signs it with the EXISTING AreaTM development certificate and
 # an EXISTING wildcard development profile that already contains the device, then installs it.
 # No certificate issuance, device registration, profile creation or upload. Synthetic data only.
+# Optional: FAULT_INJECTION=1 builds the test-only fault-injection modes (see FAULT_TESTS.md).
 # Usage: DEVICE_UDID=<udid> TEAM_ID=<team id> IDENTITY="<codesign identity>" sh build-and-install.sh [--launch]
 # All three variables are required; there are deliberately no defaults (no personal identifiers in the repo).
 set -eu
@@ -18,10 +19,13 @@ identity=$IDENTITY
 bundle_id=in.minori.key.spike.klv1
 out=${OUT_DIR:-"$here/../../../target/apple-spike"}
 [ -d "$core/Binary/KagiLinkC.xcframework" ] || { echo "Run KagiLinkCore/build-xcframework.sh first." >&2; exit 2; }
+# FAULT_INJECTION=1 compiles the test-only fault modes (off by default; never in the normal build).
+flags=""
+[ "${FAULT_INJECTION-}" = 1 ] && flags="-D FAULT_INJECTION"
 rm -rf "$out"; mkdir -p "$out/KLV1Spike.app"
 hdr="$core/Binary/KagiLinkC.xcframework/ios-arm64/Headers"
 xcrun --sdk iphoneos swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-ios18.0 \
-    -module-name KLV1Spike -I "$hdr" -Xcc "-fmodule-map-file=$hdr/module.modulemap" \
+    $flags -module-name KLV1Spike -I "$hdr" -Xcc "-fmodule-map-file=$hdr/module.modulemap" \
     "$here"/Sources/*.swift "$core/Sources/KagiLinkCore/Native.swift" "$core/Sources/KagiLinkCore/KagiLink.swift" \
     "$core/Binary/KagiLinkC.xcframework/ios-arm64/libareatm_kagilink_ffi.a" \
     -o "$out/KLV1Spike.app/KLV1Spike"

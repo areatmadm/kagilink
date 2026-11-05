@@ -12,10 +12,24 @@ private let txUUID = CBUUID(string: "7c69e9b3-c395-4fc0-87b2-b564d7b8b29e")
 private let tagAlphabet = Array("23456789ABCDEFGHJKMNPQRSTUVWXYZ")
 private let syntheticSecret = Array("synthetic-spike-secret-0123456789".utf8)
 
+#if FAULT_INJECTION
+/// Test-only fault injection (build with FAULT_INJECTION=1). Off by default; never compiled into the normal build.
+enum FaultMode: String, CaseIterable, Identifiable {
+    case none, garbageM2, tamperM4, dropAfterM3, dupChunk, skipChunk, reorderChunk, delayM2, tamperSecret
+    var id: String { rawValue }
+    /// Chunk faults need a multi-chunk message, so M2 is sent in small chunks.
+    var usesSmallChunks: Bool { self == .dupChunk || self == .skipChunk || self == .reorderChunk }
+}
+struct FaultStop: Error {}
+#endif
+
 final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     @Published var tag = "----"
     @Published var log: [String] = []
     @Published var running = false
+#if FAULT_INJECTION
+    @Published var fault: FaultMode = .none
+#endif
 
     private var manager: CBPeripheralManager!
     private var tx: CBMutableCharacteristic?
@@ -72,6 +86,9 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         running = true
         phase = 1
         note("service added, tag KL-\(tag)")
+#if FAULT_INJECTION
+        note("FAULT MODE = \(fault.rawValue) (test build, synthetic data)")
+#endif
     }
 
     func stop(_ why: String) {
@@ -85,6 +102,9 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         central = nil
         running = false
         phase = 0
+#if FAULT_INJECTION
+        note("FAULT RESULT mode=\(fault.rawValue): ended with \"\(why)\"")
+#endif
         note("stopped: \(why); updateValue-false=\(updateFalse) readyCallbacks=\(readyCalls)")
     }
 
@@ -113,6 +133,9 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         guard central == nil else { note("extra subscriber refused"); return } // one connection only
         central = c
         chunkSize = min(c.maximumUpdateValueLength, 244)
+#if FAULT_INJECTION
+        if fault.usesSmallChunks { chunkSize = 60 }
+#endif
         p.stopAdvertising()
         note("subscribed: maximumUpdateValueLength=\(c.maximumUpdateValueLength) (ATT MTU \(c.maximumUpdateValueLength + 3)), chunk=\(chunkSize); advertising stopped")
     }
@@ -148,16 +171,30 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
                                purpose: Array("synthetic-login".utf8), claims: Array("mode=spike".utf8))
             Native.wipe(&code) // the code is only needed for M2
             sender = s
-            try send(Codec.mtypeHandshake, s.m2)
+            try sendM2(s.m2)
             phase = 2
         case (2, Codec.mtypeHandshake):
+#if FAULT_INJECTION
+            if fault == .dropAfterM3 {
+                note("FAULT dropAfterM3: M3 received; no M4, error response, service removed (the app cannot drop the link itself)")
+                throw FaultStop()
+            }
+#endif
             guard let s = sender else { throw KagiLinkError(status: .malformed) }
-            let (m4, ch) = try s.finish(m3: data)
+            let (m4plain, ch) = try s.finish(m3: data)
+            var m4 = m4plain
+#if FAULT_INJECTION
+            if fault == .tamperM4 { m4[m4.count - 1] ^= 0x01; note("FAULT tamperM4: flipped one bit of M4") }
+#endif
             channel = ch
             sender = nil
             try send(Codec.mtypeHandshake, m4)
             try ch.approveOneTransfer() // spike: the Start tap is the single synthetic approval
-            for f in try ch.seal(.secret, plaintext: syntheticSecret, maxFragmentPayload: 200) {
+            for (i, fragment) in try ch.seal(.secret, plaintext: syntheticSecret, maxFragmentPayload: 200).enumerated() {
+                var f = fragment
+#if FAULT_INJECTION
+                if fault == .tamperSecret && i == 0 { f[f.count - 1] ^= 0x01; note("FAULT tamperSecret: flipped one bit of the first SECRET fragment") }
+#endif
                 try send(Codec.mtypeChannel, f)
             }
             phase = 3
@@ -171,6 +208,36 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         default:
             throw KagiLinkError(status: .malformed)
         }
+    }
+
+    /// M2 goes through here so test builds can mangle it; the normal build just sends it.
+    private func sendM2(_ m2: [UInt8]) throws {
+#if FAULT_INJECTION
+        switch fault {
+        case .garbageM2:
+            note("FAULT garbageM2: sending 40 garbage bytes instead of M2")
+            try send(Codec.mtypeHandshake, [UInt8](repeating: 0xA5, count: 40))
+        case .delayM2:
+            note("FAULT delayM2: holding M2 for 6 s (receiver limit is 5 s)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard let self, self.running else { return }
+                self.note("FAULT delayM2: sending the late M2 now")
+                try? self.send(Codec.mtypeHandshake, m2)
+            }
+        case .dupChunk, .skipChunk, .reorderChunk:
+            var chunks = try Codec.chunk(mtype: Codec.mtypeHandshake, message: m2, maxChunk: chunkSize)
+            note("FAULT \(fault.rawValue): M2 split into \(chunks.count) chunks of at most \(chunkSize) bytes")
+            if fault == .dupChunk { chunks.insert(chunks[0], at: 0) }
+            if fault == .skipChunk && chunks.count > 2 { chunks.remove(at: 1) }
+            if fault == .reorderChunk && chunks.count > 2 { chunks.swapAt(1, 2) }
+            outbound.append(contentsOf: chunks)
+            pump()
+        default:
+            try send(Codec.mtypeHandshake, m2)
+        }
+#else
+        try send(Codec.mtypeHandshake, m2)
+#endif
     }
 
     private func send(_ mtype: UInt8, _ message: [UInt8]) throws {
