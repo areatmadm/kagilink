@@ -1,6 +1,6 @@
 # KagiLink core FFI boundary design (conditionally approved, not implemented)
 
-Status: CONDITIONALLY APPROVED by the owner on 2026-11-05 (D016: plain C ABI, Windows session implements, four preconditions listed in DECISIONS.md D016). Originally PROPOSED. Nothing here is implemented or reviewed. The Windows (lead) session
+Status (update 2026-11-05, D021: preconditions met, binding spike open): CONDITIONALLY APPROVED by the owner on 2026-11-05 (D016: plain C ABI, Windows session implements, four preconditions listed in DECISIONS.md D016). Originally PROPOSED. Nothing here is implemented or reviewed. The Windows (lead) session
 owns it. Other platform sessions must not start FFI bindings, CPace ports or vector ports until
 the D016 preconditions are met and the Windows session says so.
 

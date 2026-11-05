@@ -160,6 +160,15 @@ it. Synthetic data only; owner instructed the run and approved the toolchain ins
 D016 precondition 1 (target build verification) is now met for iOS (device), Android (device) and the
 aarch64 qemu job, within the limits above. The iOS simulator was deliberately not used (owner decision).
 
+### Real C consumer test addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| tests/c/consumer.c (pure C11, only `kagilink.h` + static library): handshake, 4-part fragmented SECRET round trip, approval consumption, wrong code, receiver three-failure lockout, tamper closes channel, NULL and small-buffer handling, wipe | PASS: 71 checks, 0 failures |
+| Windows: MSVC `cl /W4 /WX /std:c11`, linked with the release static library | PASS |
+| CI (core-hardening.yml `c-consumer`): gcc `-std=c11 -Wall -Wextra -Wpedantic -Werror`, then the same program with AddressSanitizer and UBSan on the C side | PASS (both runs, 71 checks each) |
+| What this does not show | Swift, JNI or C++ consumers; the Rust side is not sanitized in the ASan run; FFI functions are not fuzzed; no independent review of the `unsafe` code |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;

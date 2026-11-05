@@ -350,3 +350,19 @@ workspace and lockfile, audited in core-hardening.yml): `hello_decode`, `handsha
 `channel_fragments`. Pinned nightly `nightly-2026-11-01`. D016 precondition 3 is met as
 infrastructure; the amount of fuzzing run so far is recorded in IMPLEMENTATION_STATUS.md and is
 small, not an assurance level.
+
+
+## D021 — Binding spike phase opened, 2026-11-05
+
+D016 preconditions are met within the recorded limits (targets verified on iPhone, Galaxy S24 and
+aarch64 qemu; minimal FFI crate; fuzz infrastructure; hosted CI; a real C consumer, `tests/c/consumer.c`,
+71 checks passing with MSVC locally and with gcc plus ASan/UBSan in CI). On the owner's go-ahead the
+platform sessions may now start a BINDING SPIKE only: link the Rust core through `kagilink.h` from
+Swift (Apple), JNI/Kotlin (Android) and C++ (Windows, lead) and reproduce the same handshake,
+fragmented SECRET round trip, wrong-code and tamper checks with synthetic data. Because every
+platform uses the one shared core, separate CPace ports and per-language vector ports are no longer
+planned; the draft-21 vectors stay in `core/cpace-eval` (Rust). Not authorised by this decision: real
+secrets, UI changes, BLE, hardware-key use, store or release steps, Apple/Google account actions.
+Still open before any real-secret use (D012): independent review of the `unsafe` FFI code and of the
+exact locked dependencies, symbol visibility and hardening flags, `panic=abort` packaging, and
+fuzzing of the FFI functions.
