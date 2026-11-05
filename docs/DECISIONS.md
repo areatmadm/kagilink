@@ -459,3 +459,29 @@ available, fail-closed behaviour, minimal exposure of plaintext); (2) detection 
 compromise is out of scope and is not a requirement, a release gate or a test goal; (3) optional,
 clearly labelled best-effort hints (for example reporting the TPM/boot-state claims) may be added
 but are never presented as a safety verdict; (4) docs/RISK_NOTICE.md says so in plain words.
+
+
+## D024 — TPM trust policy for the receiver (owner interview answers), 2026-11-05
+
+Owner answers, recorded as given:
+1. Criteria: hardware binding PLUS a displayed boot state. The phone requires the receiver's key to
+   be TPM-resident; Secure Boot and PCR state are SHOWN to the user, not required.
+2. Online EK certificate: allowed as an OPTIONAL feature.
+3. Below the criteria: BLOCK the transfer.
+
+Consequences and conditions written down so they are not lost:
+- The online EK-certificate fetch is an exception to the offline-only policy. It must be optional,
+  started by the user, one-time per receiver, outside the authentication/secret-transfer path, carry
+  no secrets, and be described honestly: the EK public key is a stable hardware identifier and the
+  vendor server that serves the certificate learns it and the requester's network address. No account,
+  telemetry or analytics is introduced. The exact vendors and endpoints are not yet researched.
+- Without the EK certificate chain the phone cannot tell a real TPM claim from a forged claim blob, so
+  the "TPM-resident key" requirement is only a weak signal (it stops honest misconfiguration, not an
+  attacker who controls the PC). The strong version needs the optional online step and a phone-side
+  verifier that is not built yet. UIs must not present the weak version as proof.
+- "Block" fixes the criterion as hardware binding, so a PC with no usable TPM cannot receive. This
+  conflicts with AGENTS.md ("TPM 2.0 preferred; accurately labelled RAM-only temporary mode allowed")
+  and may exclude older internet cafe PCs. UNRESOLVED until the owner decides whether RAM-only mode is
+  removed for sensitive transfer; AGENTS.md is not changed by this record.
+- Still unchanged from D023: no duty to detect already-installed keyloggers; the boot-state display
+  is information, not a verdict.
