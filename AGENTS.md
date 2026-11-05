@@ -23,7 +23,8 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
   `shared/ai/` (areatmadm/kagilink-ai-memory). Never use USERPROFILE, HOME, personal
   agent memory folders or another user-directory location for these records.
 - BEFORE reading, listing, searching, loading or writing ANY files under
-  `shared/ai/`, run `pwsh -NoProfile -File tools/Test-AiMemoryAccess.ps1` and check
+  `shared/ai/`, run `pwsh -NoProfile -File tools/Test-AiMemoryAccess.ps1` (on macOS/Linux without
+  PowerShell: `sh tools/test-ai-memory-access.sh`, identical checks, owner-approved D018) and check
   its exit code. Only exit 0 authorizes access in the current task. This checks
   the active authenticated GitHub API identity is exactly `areatmadm`, and that
   `areatmadm/kagilink-ai-memory` is private with that owner and readable by it.
