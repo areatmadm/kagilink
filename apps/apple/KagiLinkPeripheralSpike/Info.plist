@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleDisplayName</key><string>KL-V1 Spike</string>
+    <key>CFBundleIdentifier</key><string>in.minori.key.spike.klv1</string>
+    <key>CFBundleExecutable</key><string>KLV1Spike</string>
+    <key>CFBundleName</key><string>KLV1Spike</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.0.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>MinimumOSVersion</key><string>18.0</string>
+    <key>LSRequiresIPhoneOS</key><true/>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>합성 시험 데이터만 가까운 시험 수신기와 BLE로 교환합니다. 비밀번호는 전송하지 않습니다.</string>
+    <key>UILaunchScreen</key><dict/>
+    <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+    <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
+</dict></plist>
