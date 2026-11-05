@@ -219,6 +219,8 @@ static void test_tamper_closes_channel(void) {
     CHECK(st != KL_OK);
     CHECK(complete == 0);
     CHECK(kl_channel_is_closed(f.rx_ch) == 1);
+    CHECK(kl_channel_approve_one_transfer(f.rx_ch) == KL_ERR_CLOSED);
+    CHECK(kl_channel_set_ready_to_receive(f.rx_ch, 1) == KL_ERR_CLOSED);
     flow_free(&f);
 }
 

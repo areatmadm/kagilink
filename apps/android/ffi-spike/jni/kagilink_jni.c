@@ -76,7 +76,9 @@ static int out_begin(JNIEnv* env, jbyteArray arr, jlongArray lenArr, Out* o) {
 }
 
 static void out_end(JNIEnv* env, Out* o, jbyteArray arr, jlongArray lenArr, kl_status_t st) {
-  jlong len = (jlong)o->cap;
+  /* The length slot carries information only on KL_OK (bytes written) and KL_ERR_BUFFER (bytes
+   * required); on every other status the library left it as the capacity, so report 0. */
+  jlong len = (st == KL_OK || st == KL_ERR_BUFFER) ? (jlong)o->cap : 0;
   if (lenArr != NULL) (*env)->SetLongArrayRegion(env, lenArr, 0, 1, &len);
   if (st == KL_OK && arr != NULL && o->p != NULL && o->cap > 0) {
     (*env)->SetByteArrayRegion(env, arr, 0, (jsize)o->cap, (const jbyte*)o->p);
@@ -88,11 +90,15 @@ static void out_end(JNIEnv* env, Out* o, jbyteArray arr, jlongArray lenArr, kl_s
   o->p = NULL;
 }
 
-static void handle_out(JNIEnv* env, jlongArray arr, void* ptr) {
-  if (arr != NULL) {
+/* Publishes a freshly created handle to Java. Returns -1 if the write failed (pending JNI
+ * exception); the caller must then free the handle itself so it cannot leak or be orphaned. */
+static int handle_out(JNIEnv* env, jlongArray arr, void* ptr) {
+  if (arr != NULL && ptr != NULL) {
     jlong v = (jlong)(uintptr_t)ptr;
     (*env)->SetLongArrayRegion(env, arr, 0, 1, &v);
+    if ((*env)->ExceptionCheck(env)) return -1;
   }
+  return 0;
 }
 
 #define J(name) JNIEXPORT jint JNICALL Java_com_areatm_kagilink_spike_Native_##name
@@ -127,10 +133,14 @@ J(receiverNew)(JNIEnv* env, jclass c, jbyteArray id, jbyteArray claims, jlongArr
   }
   kl_receiver_t* r = NULL;
   kl_status_t st = kl_receiver_new(a.p, a.n, b.p, b.n, outH != NULL ? &r : NULL);
-  handle_out(env, outH, r);
+  jint rc = (jint)st;
+  if (handle_out(env, outH, r) != 0) {
+    kl_receiver_free(r);
+    rc = FAIL_NULL;
+  }
   in_put(&a);
   in_put(&b);
-  return (jint)st;
+  return rc;
 }
 
 J(receiverCode)(JNIEnv* env, jclass c, jlong h, jbyteArray out, jlongArray outLen) {
@@ -173,9 +183,13 @@ J(receiverFinish)(JNIEnv* env, jclass c, jlong h, jbyteArray m4, jlongArray outC
   if (in_get(env, m4, &a) != 0) return FAIL_NULL;
   kl_channel_t* ch = NULL;
   kl_status_t st = kl_receiver_finish(H(kl_receiver_t, h), a.p, a.n, outCh != NULL ? &ch : NULL);
-  handle_out(env, outCh, ch);
+  jint rc = (jint)st;
+  if (handle_out(env, outCh, ch) != 0) {
+    kl_channel_free(ch);
+    rc = FAIL_NULL;
+  }
   in_put(&a);
-  return (jint)st;
+  return rc;
 }
 
 JV(receiverFree)(JNIEnv* env, jclass c, jlong h) {
@@ -205,9 +219,13 @@ J(senderStart)(JNIEnv* env, jclass c, jbyteArray code, jbyteArray m1, jbyteArray
     kl_status_t st =
         kl_sender_start(code_.p, code_.n, m1_.p, m1_.n, dev_.p, dev_.n, pur_.p, pur_.n, cla_.p,
                         cla_.n, o.p, &o.cap, outSender != NULL ? &s : NULL);
-    handle_out(env, outSender, s);
-    out_end(env, &o, out, outLen, st);
     rc = (jint)st;
+    if (handle_out(env, outSender, s) != 0) {
+      kl_sender_free(s);
+      st = KL_ERR_NULL;
+      rc = FAIL_NULL;
+    }
+    out_end(env, &o, out, outLen, st);
   }
 done:
   if (o.p != NULL) {
@@ -235,10 +253,15 @@ J(senderFinish)(JNIEnv* env, jclass c, jlong h, jbyteArray m3, jbyteArray out, j
   kl_channel_t* ch = NULL;
   kl_status_t st = kl_sender_finish(H(kl_sender_t, h), a.p, a.n, o.p, &o.cap,
                                     outCh != NULL ? &ch : NULL);
-  handle_out(env, outCh, ch);
+  jint rc = (jint)st;
+  if (handle_out(env, outCh, ch) != 0) {
+    kl_channel_free(ch);
+    st = KL_ERR_NULL;
+    rc = FAIL_NULL;
+  }
   out_end(env, &o, out, outLen, st);
   in_put(&a);
-  return (jint)st;
+  return rc;
 }
 
 JV(senderFree)(JNIEnv* env, jclass c, jlong h) {
@@ -264,6 +287,10 @@ J(channelSeal)(JNIEnv* env, jclass c, jlong h, jint kind, jbyteArray plain, jlon
   (void)c;
   In a;
   Out o;
+  /* Validate before any cast or allocation: kind is KL_KIND_CONTROL..KL_KIND_RESULT and the
+   * fragment payload size is 1..256 (the library's clamp range, now enforced strictly here). */
+  if (kind < KL_KIND_CONTROL || kind > KL_KIND_RESULT) return (jint)KL_ERR_LIMITS;
+  if (maxFrag < 1 || maxFrag > 256) return (jint)KL_ERR_LIMITS;
   if (in_get(env, plain, &a) != 0) return FAIL_NULL;
   if (out_begin(env, out, outLen, &o) != 0) {
     in_put(&a);
@@ -271,7 +298,7 @@ J(channelSeal)(JNIEnv* env, jclass c, jlong h, jint kind, jbyteArray plain, jlon
   }
   size_t count = 0;
   kl_status_t st = kl_channel_seal(H(kl_channel_t, h), (uint8_t)kind, a.p, a.n,
-                                   maxFrag < 0 ? 0 : (size_t)maxFrag, o.p, &o.cap,
+                                   (size_t)maxFrag, o.p, &o.cap,
                                    outCount != NULL ? &count : NULL);
   if (outCount != NULL) {
     jlong cnt = (jlong)count;
