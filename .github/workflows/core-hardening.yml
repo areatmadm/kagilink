@@ -62,6 +62,8 @@ jobs:
         run: |
           rustup toolchain install 1.92.0 --profile minimal
           cargo +1.92.0 build -p areatm-kagilink-ffi --release --locked
+      - name: Exported symbols match the header exactly
+        run: sh tools/check-ffi-exports.sh target/release/libareatm_kagilink_ffi.so
       - name: Compile and run the C consumer (strict warnings)
         run: |
           gcc -std=c11 -Wall -Wextra -Wpedantic -Werror -Icore/kagilink-ffi/include \
