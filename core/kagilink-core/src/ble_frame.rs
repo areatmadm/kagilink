@@ -18,9 +18,10 @@ pub const MTYPE_HANDSHAKE: u8 = 1;
 /// Message type: one secure-channel transport fragment.
 pub const MTYPE_CHANNEL: u8 = 2;
 
-const FIRST: u8 = 0b01;
-const LAST: u8 = 0b10;
-const RESERVED: u8 = !(FIRST | LAST);
+const FIRST: u8 = 0b001;
+const LAST: u8 = 0b010;
+const ACK: u8 = 0b100;
+const RESERVED: u8 = !(FIRST | LAST | ACK);
 const HEADER: usize = 2;
 const PREFIX: usize = 3;
 
@@ -63,6 +64,21 @@ pub fn chunk_message(mtype: u8, message: &[u8], max_chunk: usize) -> Result<Vec<
         out.push(chunk);
     }
     Ok(out)
+}
+
+/// Application acknowledgement chunk (2 bytes: flags = ACK, seq). Used only when the sender has to
+/// use Notify instead of Indicate: the central writes one ACK per received chunk (D026).
+pub fn ack_chunk(seq: u8) -> [u8; 2] {
+    [ACK, seq]
+}
+
+/// If `chunk` is exactly an ACK chunk, return the sequence number it acknowledges. ACKs are handled
+/// by the caller before data chunks reach the [`Reassembler`], which rejects them.
+pub fn parse_ack(chunk: &[u8]) -> Option<u8> {
+    match chunk {
+        [f, seq] if *f == ACK => Some(*seq),
+        _ => None,
+    }
 }
 
 enum State {
@@ -113,7 +129,7 @@ impl Reassembler {
             return self.die(Error::Malformed);
         }
         let (flags, seq, body) = (chunk[0], chunk[1], &chunk[HEADER..]);
-        if flags & RESERVED != 0 {
+        if flags & (RESERVED | ACK) != 0 {
             return self.die(Error::Malformed);
         }
         let first = flags & FIRST != 0;
@@ -288,6 +304,20 @@ mod tests {
         assert!(Reassembler::new()
             .push(&vec![FIRST; MAX_CHUNK + 1])
             .is_err());
+    }
+
+    #[test]
+    fn ack_chunks_are_recognised_and_never_enter_the_reassembler() {
+        assert_eq!(parse_ack(&ack_chunk(0)), Some(0));
+        assert_eq!(parse_ack(&ack_chunk(200)), Some(200));
+        assert_eq!(parse_ack(&[ACK, 1, 0]), None);
+        assert_eq!(parse_ack(&[FIRST, 1]), None);
+        assert_eq!(parse_ack(&[]), None);
+        let chunks = chunk_message(MTYPE_CHANNEL, &msg(40), 20).unwrap();
+        let mut with_ack_flag = chunks[0].clone();
+        with_ack_flag[0] |= ACK;
+        assert!(Reassembler::new().push(&with_ack_flag).is_err());
+        assert!(Reassembler::new().push(&ack_chunk(0)).is_err());
     }
 
     #[test]

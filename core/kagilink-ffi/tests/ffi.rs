@@ -273,7 +273,8 @@ fn wrong_code_fails_and_counts_failure() {
             KL_ERR_CONFIRMATION_FAILED
         );
         assert!(rx.is_null());
-        // Failures 2 and 3: junk M2 after fresh attempts.
+        // Failures 2 and 3: fresh attempts that reach M3 and then get a bogus M4 (D026: only an
+        // attempt that already sent M3 uses the budget).
         for _ in 0..2 {
             let mut m1 = vec![0u8; 512];
             let mut n = m1.len();
@@ -281,13 +282,22 @@ fn wrong_code_fails_and_counts_failure() {
                 kl_receiver_begin_attempt(p.r, m1.as_mut_ptr(), &mut n),
                 KL_OK
             );
-            let junk = [0x12u8; 10];
+            m1.truncate(n);
+            let (rc, m2, s2) = sender_start(&bad, &m1);
+            assert_eq!(rc, KL_OK);
             let mut m3 = [0u8; 128];
-            let mut n = m3.len();
-            assert_ne!(
-                kl_receiver_handle_m2(p.r, junk.as_ptr(), junk.len(), m3.as_mut_ptr(), &mut n),
+            let mut n3 = m3.len();
+            assert_eq!(
+                kl_receiver_handle_m2(p.r, m2.as_ptr(), m2.len(), m3.as_mut_ptr(), &mut n3),
                 KL_OK
             );
+            let mut rx2 = null_mut();
+            assert_ne!(
+                kl_receiver_finish(p.r, bogus.as_ptr(), bogus.len(), &mut rx2),
+                KL_OK
+            );
+            assert!(rx2.is_null());
+            kl_sender_free(s2);
         }
         // Three failures: the code is destroyed.
         let mut code = [0u8; 6];

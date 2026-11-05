@@ -44,9 +44,10 @@ sent) -> Consumed (success) or Dead (expired or three failures).
 
 - The code TTL is 60 000 ms on a monotonic clock from creation, never extended.
 - One attempt at a time. Each begin_attempt makes a fresh sid, nonce_r and CPace scalar.
-- Failures counted: malformed M2, invalid or identity share, wrong-state message, bad
-  M4 tag, and an attempt abandoned by begin_attempt while one is open. At the third
-  failure, or at expiry, the code is zeroized and the session is dead.
+- Failures counted (D026, was: every error): only attempts that already sent M3 - a bad M4
+  tag, a second M2, or an attempt abandoned by begin_attempt after M3. Errors before M3
+  (malformed or invalid M2, M4 before M3) drop the attempt without cost. At the third failure,
+  or at expiry, the code is zeroized and the session is dead.
 - Success consumes the code (zeroized) and returns the SecureChannel. A dead or
   consumed session returns NotActive, Expired or TooManyFailures.
 - The sender has its own 60 s guard from start(); the receiver stays authoritative and

@@ -68,9 +68,11 @@ failures close the attempt and discard all ephemeral state.
 ## Attempt limits (receiver authoritative)
 
 Code TTL is 60 000 ms on a monotonic clock from creation (first display), never
-extended. One attempt at a time. Any failure after M2 is accepted for processing
-(malformed M2, invalid share, wrong state, bad M4 tag, attempt abandoned by a new
-begin_attempt while one is open) counts as a failed attempt. At three failures or at
+extended. One attempt at a time. Only an attempt that has already sent M3 can have
+exposed a testable code guess (M3 carries a confirmation tag), so only such attempts count (D026):
+a bad M4 tag, a second M2, or an attempt abandoned by begin_attempt after M3 was sent. A
+malformed or invalid M2, or an M4 that arrives before any M3, sends nothing and costs nothing.
+At three failures or at
 expiry the code is zeroized and the session is dead; success consumes the code. A new
 session requires a fresh code, session ID, nonce and PAKE scalar; a closed code,
 scalar or traffic key is never reused, and the sender must ask for a fresh code after any

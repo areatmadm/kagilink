@@ -513,3 +513,27 @@ code-derived advertising data. Fresh random UUIDs replace the Phase 0 diagnostic
 become production. Status: DRAFT. Verified so far: the codec's local synthetic tests only. Open
 questions listed in section 9 of the spec (Indicate vs Notify fallback, address rotation, optional
 display tag for choosing between several senders, platform implementations).
+
+
+## D026 — Crowded-place selection, Notify fallback and failure counting, 2026-11-06
+
+Owner interview answers, recorded as given: (1) where Indicate is unavailable, Notify with a per-chunk
+application ACK is allowed; (2) crowded places such as internet cafes and libraries are in scope for the
+first version; (3) the right phone is chosen by BOTH a random per-start display tag and a signal-sorted
+list, with the user selecting; (4) failures are counted only when a code guess was actually evaluated.
+
+Consequences:
+* BLE_GATT_SPEC.md sections 2, 3 and 9 are updated: Notify + ACK chunk, scan-response name `KL-XXXX`
+  with a fresh 4-character random tag, receiver lists advertisers sorted by signal and never
+  auto-connects, duplicate tags are refused. The tag is not derived from the code.
+* D014 change (failure counting): a code guess can only be tested by someone who received M3, because M3
+  carries the receiver's confirmation tag (an offline test of one guess per M3), or who sent an M4. So
+  the budget counts a bad M4 tag, a second M2, and an attempt abandoned after M3 was sent. A malformed
+  or invalid M2, and an M4 that arrives before any M3, cost nothing because no guess could be tested.
+  Security of the guess limit is unchanged (every M3 handed out is either followed by a good M4 or
+  counted); what changes is that strangers who only send malformed data can no longer exhaust the budget.
+  Implemented in handshake.rs with updated core, FFI, C and C++ tests; PROTOCOL.md, PHASE1_CORE_DESIGN.md
+  and TEST_PLAN.md updated. The wire format and key schedule are unchanged.
+* Residual availability attacks stay possible and are accepted: a nearby device can hold the sender's
+  single connection slot, copy a visible tag, or complete M2 repeatedly to spend the three failures. They
+  do not leak the code or a secret. A rate limit on new connections is an open question.

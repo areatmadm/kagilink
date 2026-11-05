@@ -223,6 +223,15 @@ Remote Desktop target exists.
 | New fuzz target `ble_frames` added to fuzz.yml | Compiles; NOT RUN yet (needs a manual dispatch of the fuzz workflow) |
 | Real-device checks (MTU 23 and negotiated, Indicate delivery/order, disconnects, two advertisers, wrong code, 60 s expiry, Windows GattSession) | NOT RUN |
 
+### D026 addendum (crowded places, Notify fallback, failure counting) — 2026-11-06
+
+| Check | Actual outcome |
+|---|---|
+| handshake.rs: only attempts that already sent M3 count (bad M4 tag, second M2, abandonment after M3); malformed M2 and M4-before-M3 are free | Implemented. Core: 40 unit + 41 handshake tests; one old test replaced by four tests of the new rule; FFI test updated; C consumer 75 checks and C++ consumer 55 checks pass locally on MSVC; workspace total 125 tests, 0 failed; fmt, clippy -D warnings, cargo deny clean |
+| ble_frame ACK chunk helpers for the Notify fallback (ack_chunk, parse_ack; data path rejects ACK flags) | Implemented with one added test |
+| BLE_GATT_SPEC.md updated: scan-response tag `KL-XXXX`, signal-sorted list, user selection, Notify + ACK, no auto-connect | DRAFT, not reviewed by platform sessions, not run on devices |
+| Scan-response local name carrying the tag on iOS/Android/Windows; Notify stop-and-wait; look-alike tag behaviour | NOT RUN |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;

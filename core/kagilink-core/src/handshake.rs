@@ -160,10 +160,16 @@ impl ReceiverSession {
     /// Start a fresh attempt; returns message M1. An attempt still open counts as failed.
     pub fn begin_attempt(&mut self, rng: &mut impl CryptoRng) -> Result<Vec<u8>> {
         self.check_live()?;
-        if self.attempt.is_some() {
+        // An earlier attempt that already sent M3 gave a peer one offline guess: it counts as a
+        // failure. One that never got that far revealed nothing and is dropped for free (D026).
+        if matches!(
+            self.attempt.as_ref().map(|a| &a.stage),
+            Some(Stage::AwaitM4(_))
+        ) {
             self.fail(Error::AttemptInProgress);
             self.check_live()?;
         }
+        self.attempt = None;
         let mut sid = [0u8; SID_LEN];
         let mut nonce = [0u8; NONCE_LEN];
         rng.fill_bytes(&mut sid);
@@ -190,6 +196,7 @@ impl ReceiverSession {
             return Err(Error::WrongState);
         };
         if !matches!(attempt.stage, Stage::AwaitM2) {
+            // M3 was already sent for this attempt, so a second M2 is a failed attempt.
             return Err(self.fail(Error::WrongState));
         }
         match self.respond(rng, &attempt, m2) {
@@ -198,7 +205,9 @@ impl ReceiverSession {
                 self.attempt = Some(attempt);
                 Ok(m3)
             }
-            Err(e) => Err(self.fail(e)),
+            // No M3 left this device, so no code guess could be tested: the attempt is dropped
+            // without using up the failure budget (D026). A fresh begin_attempt is needed.
+            Err(e) => Err(e),
         }
     }
 
@@ -236,7 +245,8 @@ impl ReceiverSession {
             return Err(Error::WrongState);
         };
         let Stage::AwaitM4(derived) = attempt.stage else {
-            return Err(self.fail(Error::WrongState));
+            // M4 arrived before any M3 was sent: nothing was revealed, nothing is counted.
+            return Err(Error::WrongState);
         };
         let verified = decode_m4(m4).and_then(|tag| derived.verify(Side::Sender, &tag));
         if let Err(e) = verified {

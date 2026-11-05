@@ -97,7 +97,9 @@ side-channel/memory review.
 | Lifecycle | TTL expiry at 60 s, just before (accepted) and just after (refused) | PASS |
 | Lifecycle | Three failures destroy the code; fourth attempt refused | PASS |
 | Lifecycle | Success consumes the code; reuse refused | PASS |
-| Lifecycle | Attempt abandoned by begin_attempt counts as a failure | PASS |
+| Lifecycle | Attempt abandoned by begin_attempt BEFORE M3 is free (D026) | PASS |
+| Lifecycle | Attempt abandoned after M3 counts as a failure (D026) | PASS |
+| Lifecycle | Malformed M2 and M4-before-M3 do not use the budget; bad M4 after M3 does, three destroy the code (D026) | PASS |
 | Keys | Session keys, sid and nonces differ across sessions with the same code | PARTIAL: sessions with different sids are shown not to interoperate; key/sid/nonce inequality is not asserted directly |
 | Keys | Directional key separation (s2r vs r2s, confirmation vs AEAD) | PARTIAL: wrong-direction replay is rejected in transport tests; confirmation-vs-AEAD key separation is not asserted directly |
 | Transport | AEAD tamper (ciphertext, tag, header, AAD fields) closes channel, no plaintext | PASS |

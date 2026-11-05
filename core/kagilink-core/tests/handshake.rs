@@ -346,13 +346,14 @@ fn ttl_is_not_extended_by_failures() {
 // ---------------------------------------------------------------- 6. abandoned attempt
 
 #[test]
-fn abandoned_attempt_counts_as_failure_and_uses_fresh_sid() {
+fn attempt_abandoned_before_m3_is_free_and_uses_fresh_sid() {
+    // D026: no M3 left the receiver, so no code guess could be tested; nothing is counted.
     let (_c, clk) = clock();
     let mut rx = new_rx(&clk);
     let mut rng = os_rng();
     let m1a = rx.begin_attempt(&mut rng).unwrap();
     let m1b = rx.begin_attempt(&mut rng).unwrap();
-    assert_eq!(rx.failures(), 1);
+    assert_eq!(rx.failures(), 0);
     let a = HelloR::decode(&m1a).unwrap();
     let b = HelloR::decode(&m1b).unwrap();
     assert_ne!(a.sid, b.sid);
@@ -363,6 +364,55 @@ fn abandoned_attempt_counts_as_failure_and_uses_fresh_sid() {
     let m3 = rx.handle_m2(&mut rng, &m2).unwrap();
     let (m4, _tx) = pending.handle_m3(&m3).unwrap();
     assert!(rx.handle_m4(&m4).is_ok());
+}
+
+#[test]
+fn attempt_abandoned_after_m3_counts_as_failure() {
+    // M3 carries a confirmation tag that lets its receiver test one code guess offline, so an
+    // attempt dropped after M3 uses one failure.
+    let (_c, clk) = clock();
+    let mut rx = new_rx(&clk);
+    let code = code_of(&rx);
+    let mut rng = os_rng();
+    let m1 = rx.begin_attempt(&mut rng).unwrap();
+    let (m2, _pending) = sender_start(&clk, &code, &m1).unwrap();
+    let _m3 = rx.handle_m2(&mut rng, &m2).unwrap();
+    assert_eq!(rx.failures(), 0);
+    rx.begin_attempt(&mut rng).unwrap(); // abandons the attempt that already sent M3
+    assert_eq!(rx.failures(), 1);
+}
+
+#[test]
+fn malformed_or_wrong_state_messages_before_m3_do_not_use_the_budget() {
+    let (_c, clk) = clock();
+    let mut rx = new_rx(&clk);
+    let mut rng = os_rng();
+    for _ in 0..10 {
+        rx.begin_attempt(&mut rng).unwrap();
+        assert_rejected(rx.handle_m2(&mut rng, &[0x12, 0, 0]), "garbage M2");
+        assert_eq!(rx.failures(), 0);
+        rx.begin_attempt(&mut rng).unwrap();
+        assert_rejected(rx.handle_m4(&bogus_m4()), "M4 before M3");
+        assert_eq!(rx.failures(), 0);
+    }
+    assert!(rx.is_active());
+}
+
+#[test]
+fn bad_m4_after_m3_counts_and_three_of_them_destroy_the_code() {
+    let (_c, clk) = clock();
+    let mut rx = new_rx(&clk);
+    let code = code_of(&rx);
+    let mut rng = os_rng();
+    for i in 1..=3u8 {
+        let m1 = rx.begin_attempt(&mut rng).unwrap();
+        let (m2, _pending) = sender_start(&clk, &code, &m1).unwrap();
+        let _m3 = rx.handle_m2(&mut rng, &m2).unwrap();
+        assert_rejected(rx.handle_m4(&bogus_m4()), "bogus M4");
+        assert_eq!(rx.failures(), i);
+    }
+    assert!(!rx.is_active());
+    assert!(rx.code().is_err());
 }
 
 #[test]

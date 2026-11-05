@@ -165,18 +165,28 @@ static void test_wrong_code(void) {
     f.m4_len = sizeof f.m4;
     CHECK(kl_sender_finish(f.tx, f.m3, f.m3_len, f.m4, &f.m4_len, &f.tx_ch) != KL_OK);
 
-    /* Receiver side: bogus M4 values burn the three-failure budget, then the code is gone. */
+    /* Receiver side (D026): only attempts that already sent M3 use the three-failure budget.
+     * Failure 1 is the wrong-code attempt above (M3 sent, then a bogus M4). Two more full
+     * attempts that reach M3 and then get a bogus M4 destroy the code. */
     for (i = 0; i < 3; i++) {
         uint8_t bogus[33];
-        uint8_t m1b[BUF];
-        size_t m1b_len = sizeof m1b;
+        uint8_t m1b[BUF], m2b[BUF], m3b[BUF];
+        size_t m1b_len = sizeof m1b, m2b_len = sizeof m2b, m3b_len = sizeof m3b;
+        kl_sender_t* s2 = NULL;
         kl_channel_t* ch = NULL;
         memset(bogus, 0, sizeof bogus);
         bogus[0] = 0x14;
-        if (i > 0) CHECK(kl_receiver_begin_attempt(f.rx, m1b, &m1b_len) == KL_OK);
+        if (i > 0) {
+            CHECK(kl_receiver_begin_attempt(f.rx, m1b, &m1b_len) == KL_OK);
+            CHECK(kl_sender_start(wrong, 6, m1b, m1b_len, TX_ID, sizeof TX_ID - 1, PURPOSE,
+                                  sizeof PURPOSE - 1, CLAIMS, sizeof CLAIMS - 1, m2b, &m2b_len,
+                                  &s2) == KL_OK);
+            CHECK(kl_receiver_handle_m2(f.rx, m2b, m2b_len, m3b, &m3b_len) == KL_OK);
+        }
         st = kl_receiver_finish(f.rx, bogus, sizeof bogus, &ch);
         CHECK(st != KL_OK);
         CHECK(ch == NULL);
+        kl_sender_free(s2);
     }
     {
         uint8_t code[6];
