@@ -1,0 +1,34 @@
+[package]
+name = "areatm-kagilink-core-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Coverage-guided fuzz targets for areatm-kagilink-core (cargo-fuzz). Synthetic data only."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+areatm-kagilink-core = { path = ".." }
+
+# Separate workspace so the main workspace and its lockfile stay unaffected.
+[workspace]
+
+[[bin]]
+name = "hello_decode"
+path = "fuzz_targets/hello_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "handshake_messages"
+path = "fuzz_targets/handshake_messages.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "channel_fragments"
+path = "fuzz_targets/channel_fragments.rs"
+test = false
+doc = false

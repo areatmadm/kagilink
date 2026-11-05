@@ -10,3 +10,6 @@
 apps/android/local.properties
 **/xcuserdata/
 **/*.xcuserstate
+/core/kagilink-core/fuzz/target/
+/core/kagilink-core/fuzz/artifacts/
+/core/kagilink-core/fuzz/corpus/
