@@ -60,6 +60,187 @@ test is still required; --self-input can briefly take focus and is opt-in only.
 Tests not explicitly recorded as run are NOT RUN. Synthetic model success is not
 cryptographic evidence. No production memory zeroization has been implemented.
 
+## CPace evaluation (Phase 1 entry work) — 2026-11-04
+
+Decision D013 replaced SPAKE2 with CPace. `core/cpace-eval` runs `pakery-cpace` 0.6.2
+(Ristretto255 + SHA-512) against draft-irtf-cfrg-cpace-21 Appendix B.3: 7 conformance
+tests PASS, plus existing 11 model tests; fmt and clippy -D warnings PASS. This is
+candidate evidence only. Phase 0 exit criterion 3 is NOT closed: no audit, no
+side-channel/erasure review, no cargo audit/deny, no cross-language vectors. Phase 1
+production code remains gated; real-secret transfer stays disabled.
+
+## Phase 1 core prototype (core/kagilink-core) — 2026-11-04
+
+Implemented per D014: CPace (pakery-cpace 0.6.2, Ristretto255) handshake with explicit
+mutual key confirmation, HKDF-SHA-512 key schedule, receiver-enforced 60 s TTL and
+three-failure budget, AES-256-GCM framed transport. `aes-gcm` is built with its
+`zeroize` feature. Built in parallel (transport, tests and docs by separate agents,
+handshake by the main session) and integrated here.
+
+| Check | Actual outcome |
+|---|---|
+| cargo fmt --all | PASS |
+| cargo clippy --workspace --all-targets -- -D warnings | PASS |
+| cargo test --workspace (debug) | PASS: 29 transport unit tests, 38 handshake tests, 7 CPace draft vectors, 11 Phase 0 model tests |
+| Two handshake tests initially failed because of test bugs (flipped a suite byte instead of a sid byte; used the wrong receiver's code); fixed in the tests, no implementation change | recorded for transparency |
+| Coverage-guided fuzzing, constant-time/side-channel review, memory-dump review, independent audit | NOT RUN (see hardening addendum below for what was run) |
+| Cross-language vectors, FFI, BLE mapping, hardware key use, real-secret transfer | NOT DONE; real-secret transfer remains disabled |
+
+Known limits: `SecureChannel::new` and the key schedule copy 32-byte keys by value, so
+transient stack copies are not tracked; `Aes256Gcm` is rebuilt per operation. Errors
+The error `AttemptInProgress` is defined but the handshake counts an abandoned attempt as a plain
+failure. Phase 0 exit criterion 3 stays open.
+
+### Phase 1 hardening addendum — 2026-11-05 (D017)
+
+| Check | Actual outcome |
+|---|---|
+| cargo audit (RustSec db, 1403 advisories, 47 crates in Cargo.lock) | PASS: exit 0, no vulnerabilities or warnings reported |
+| cargo deny check (deny.toml: advisories, bans, licenses, sources) | PASS (advisories ok, bans ok, licenses ok, sources ok) |
+| tests/mutation.rs (10 deterministic fixed-seed mutation tests, 300 rounds each) | PASS: mutated M1/M2/M3/M4 and transport fragments never completed a handshake or released a message; decoders never panicked and only accepted canonical encodings; random bytes never panicked |
+| FFI boundary | DESIGN ONLY: docs/FFI_DESIGN.md, D016 (proposed); no code, owner approval pending |
+
+The mutation tests are NOT coverage-guided fuzzing and give no coverage claim; cargo-fuzz
+needs a nightly toolchain that is not installed. cargo audit/deny check known advisories and
+licenses only; they are not a code audit. One test bug was fixed while writing them (the
+fragment size could exceed the 256-fragment limit); no implementation change.
+
+### D016 preconditions progress addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| CI fix: `cargo --offline` removed from phase0.yml (runs on main had been failing since the Phase 1 core landed because the runner could not download crates) | PASS on e1620cf and aef1dc7 |
+| `cargo check -p areatm-kagilink-core` for aarch64-linux-android, aarch64-apple-ios, aarch64-apple-ios-sim, aarch64-apple-darwin, run on Windows | PASS (type-check only: no linking, no tests, no Xcode/NDK) |
+| `cargo check -p areatm-kagilink-ffi` for aarch64-linux-android, aarch64-apple-ios, aarch64-apple-ios-sim, on Windows | PASS (type-check only) |
+| `.github/workflows/core-hardening.yml` on GitHub-hosted runners (aef1dc7): cargo audit + cargo deny; core tests under qemu-aarch64 (29 unit + 38 handshake + 10 mutation); core library build for aarch64-linux-android | PASS. The qemu run uses a normal Linux libc, so it is NOT Android verification; the Android job is compile-only |
+| core/kagilink-ffi: fmt, clippy -D warnings, workspace tests (9 FFI tests; total workspace 104 passing) on Windows x86_64 | PASS (run by the subagent and re-run by the lead) |
+| kagilink.h syntax check with MSVC `cl /W4 /Zs` | PASS (syntax only; no real C/C++ consumer linked) |
+| iOS simulator/device build and tests (macOS session), Android real-device adb run (Android session), coverage-guided fuzzing, FFI tests under qemu and on mobile targets | NOT RUN |
+
+### Coverage-guided fuzzing addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `.github/workflows/fuzz.yml` (manual, GitHub-hosted ubuntu, nightly-2026-11-01, cargo-fuzz with libFuzzer + AddressSanitizer), 3 targets: hello_decode, handshake_messages, channel_fragments | First run failed because cargo-fuzz defaulted to a musl target; fixed with `--target x86_64-unknown-linux-gnu` |
+| 60 s smoke run | PASS: 18,182,317 / 519,588 / 105,831 executions, no crash |
+| 900 s run per target | PASS: hello_decode 224,382,468; handshake_messages 5,384,071; channel_fragments 1,227,815 executions; no crash, no assertion failure, no sanitizer report |
+| What this does not show | 15 minutes per target is small. The corpus is not saved between runs, no coverage report was reviewed, and fuzzing finds crashes and violated assertions, not logic or side-channel flaws. FFI functions are not fuzzed yet. The fuzz lockfile resolves some transitive versions independently of the root lockfile |
+
+### Apple target verification addendum — 2026-11-05 (reported by the macOS session)
+
+Results below were produced and reported by the macOS session on the MacBook; the lead session did
+not re-run them. Synthetic data only.
+
+| Check | Reported outcome |
+|---|---|
+| macOS native `cargo test --workspace --locked` (rustc 1.92.0, commit 7383359) | PASS: 104 tests, 0 failures |
+| Release build of core and FFI for aarch64-apple-ios and aarch64-apple-ios-sim | PASS (build only) |
+| Core test binaries (29 unit, 38 handshake, 10 mutation) installed and run on a physical iPhone 15 Pro, signed with an existing team development certificate through a temporary app; temporary app removed afterwards | PASS (reported) |
+| iOS simulator `simctl spawn` run | NOT RUN: deferred by the owner (decision relayed by the macOS session, 2026-11-05) because real Bluetooth and Secure Enclave behaviour can only be checked on a physical device; physical-device runs are the chosen method, signed with the existing team development certificate for synthetic-data debug tests only |
+| Not covered on the iPhone | the 7 CPace draft vectors, the 11 model tests, the 9 FFI tests, and any BLE, Secure Enclave or Keychain behaviour |
+
+Signing side effects, unverified: the session ran `xcodebuild -allowProvisioningUpdates` and Xcode
+fetched a wildcard development provisioning profile; the session could not tell whether that profile
+was newly created or already existed, or whether the device registration changed. No certificate was
+issued and no project file was edited. The project's `CODE_SIGNING_ALLOWED = NO` change is still not
+started. The owner should check the Apple developer account for any new profile or device entry.
+
+### Android target verification addendum — 2026-11-05 (reported by the Android session)
+
+Produced and reported by the Android session on a physical device; the lead session did not re-run
+it. Synthetic data only; owner instructed the run and approved the toolchain install.
+
+| Check | Reported outcome |
+|---|---|
+| Core test binaries built for aarch64-linux-android (Rust 1.92.0, NDK 29.0.14206865 clang, release, locked) from commit 9027f43 in an isolated worktree | PASS (build) |
+| Run on a physical Samsung SM-S921N, Android 16 (SDK 36), arm64-v8a, one directory under /data/local/tmp, removed afterwards; no root, no signing change, no app install | PASS: unit 29/29, handshake 38/38, mutation 10/10, 0 failures, 0 not run |
+| What this covers | real aarch64 and Android's bionic libc, including OS randomness through getrandom |
+| What it does not cover | StrongBox/Keystore behaviour, the 7 CPace draft vectors, the 9 FFI tests and the model tests on the device, BLE, and the manual device attestation question |
+
+D016 precondition 1 (target build verification) is now met for iOS (device), Android (device) and the
+aarch64 qemu job, within the limits above. The iOS simulator was deliberately not used (owner decision).
+
+### Real C consumer test addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| tests/c/consumer.c (pure C11, only `kagilink.h` + static library): handshake, 4-part fragmented SECRET round trip, approval consumption, wrong code, receiver three-failure lockout, tamper closes channel, NULL and small-buffer handling, wipe | PASS: 71 checks, 0 failures |
+| Windows: MSVC `cl /W4 /WX /std:c11`, linked with the release static library | PASS |
+| CI (core-hardening.yml `c-consumer`): gcc `-std=c11 -Wall -Wextra -Wpedantic -Werror`, then the same program with AddressSanitizer and UBSan on the C side | PASS (both runs, 71 checks each) |
+| What this does not show | Swift, JNI or C++ consumers; the Rust side is not sanitized in the ASan run; FFI functions are not fuzzed; no independent review of the `unsafe` code |
+
+### Windows C++ consumer and FFI fuzzing addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `core/kagilink-ffi/include/kagilink.hpp` (C++20 RAII wrapper: wiped `SecretBytes`, owning Receiver/Sender/Channel, grow-and-retry buffers) with `tests/cpp/consumer.cpp`, MSVC `/W4 /WX /std:c++20` | PASS locally and in CI (`cpp-consumer`, windows-latest): 55 checks, 0 failures; includes a 3000-byte message that exercises the held-message and retry paths, wrong code, tamper, and move semantics |
+| Fuzz target `ffi_calls` (new): drives the C ABI exports with arbitrary bytes, lengths and output capacities; asserts no export ever returns KL_ERR_PANIC and that fuzz bytes never complete a handshake or authenticate | First run FAILED with LeakSanitizer reports. Cause was the fuzz harness: it did not free the sender and receiver handle shells of its channel section (a host duty per kagilink.h), not the library. Fixed in the harness |
+| 300 s rerun of all four targets (GitHub-hosted, nightly-2026-11-01, ASan) | PASS: hello_decode 128,067,057; handshake_messages 2,297,091; channel_fragments 420,589; ffi_calls 388,564 executions; no crash, assertion failure or sanitizer report |
+| What this does not show | The `ffi_calls` target is small and shallow compared with the others; the harness uses `unsafe` itself; 5-minute runs without a saved corpus are a smoke level; no independent review of the FFI `unsafe` code |
+
+### D022 TPM probe addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `apps/windows/rust/tpm-probe` builds on Windows; non-Windows builds a stub; fmt, clippy -D warnings, workspace tests (104 passing), cargo deny and cargo audit with the new crate | PASS |
+| Run as a normal user on the lead PC | TPM 2.0 (AMD firmware TPM, hardware interface); Secure Boot disabled; TBS context, GetCapability, PCR read, ephemeral TPM P-256 key creation and EK public read all worked without administrator rights; EK certificate not available in NV (8-byte value) |
+| Key attestation claim and platform claim (quote + boot log) through the Platform Crypto Provider as a normal user, on the lead PC | PASS (claims produced: key attestation 1703 bytes, platform claim 1187 bytes with a 4-byte PCR mask; OS self-check of the key claim OK). The AIK is not EK-activated; blobs not parsed |
+| Offline verification on a phone, EK-certificate chain for this AMD firmware TPM, PC bang machines, other vendors' TPMs | NOT RUN / UNKNOWN |
+
+### Windows Rust receiver skeleton addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `apps/windows/rust/receiver` (lib + CLI) and `tpm-probe` refactored into lib + bin with `assess()`; fmt, clippy -D warnings, workspace tests, cargo deny, cargo audit | PASS (receiver adds 7 unit tests: D024 decision table, boot state display-only, gate needs acknowledgment, blocked PC cannot be acknowledged, loopback in both modes) |
+| `kagilink-receiver check` on the lead PC as a normal user | TPM present, attestation claim produced, decision PROCEED; Secure Boot disabled is shown, not enforced |
+| `kagilink-receiver loopback --accept` on the lead PC | OK: core handshake with a simulated phone, one approved SECRET transfer of 36 synthetic bytes, plaintext not shown |
+| Cancel path (answer other than YES) | exit code 2, no transfer |
+| Block and RAM-only decisions on a real PC | NOT RUN (covered only by unit tests; the lead PC has a working TPM) |
+| BLE, text entry into a target window, phone-side verification, vault, installer/portable packaging | NOT DONE |
+
+### Rust BLE central and own-window input probes addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `receiver` BLE module (WinRT through the `windows` crate, safe Rust; implements the Phase 0 fixed PING/PONG contract; scan, exactly-one-sender rule, write with response, exact reply check; prints no addresses or names) | Builds, clippy clean. Run on the lead PC (Realtek BLE adapter, central role supported): an 8 s scan with no phone advertising gave NoSender; on 2026-11-06 the owner ran it with a phone sender started: 15 s scan, RESULT ExchangeOk (fixed request written with response, exact fixed reply read). The sender was an iOS phone running the Phase 0 app (exact model not recorded); this verifies only the Phase 0 fixed-string exchange from Rust, not fragmentation, MTU, notifications, disconnect behaviour, cryptography or the production protocol |
+| `input-probe` (own-window synthetic Unicode input, opt-in `--send-to-own-window`, sends only if its own window is foreground, reads the text back from its own edit box) | Builds, clippy clean. First run without a user click: INCONCLUSIVE, nothing sent (Windows does not let a background program take the foreground; no workaround is attempted). Changed to wait up to 20 s for the user's click. Run by the owner with the click (2026-11-06): 56 of 56 events queued, edit box held all 28 characters, RESULT DELIVERED to our own window (normal integrity, same desktop) |
+| Input into other windows, elevated windows, CredUI, secure desktop, Remote Desktop | NOT TESTED and out of the allowed scope of these probes |
+
+Desk research on input constraints (public search 2026-11-05; community reports are not official
+guidance): SendInput is subject to UIPI and is silently dropped when the target runs at a higher
+integrity level, and its return value does not say why; Unicode packets (KEYEVENTF_UNICODE, VK_PACKET)
+are reported by community posts to be lost in some Remote Desktop and console scenarios while scan-code
+input sometimes works; no Microsoft statement about SendInput into an mstsc session was found. Together
+this means RDP and credential-dialog input must stay unsupported (AGENTS.md) until evidence from a real
+Remote Desktop target exists.
+
+### BLE/GATT framing draft addendum — 2026-11-06
+
+| Check | Actual outcome |
+|---|---|
+| docs/BLE_GATT_SPEC.md (D025) written | DRAFT, not reviewed by the platform sessions, not tested on devices |
+| `ble_frame` codec: 10 unit tests (all message lengths 1..512 over chunk sizes 6..512, back-to-back messages, duplicate/gap/reorder, missing/double FIRST, reserved bits, unknown type, zero/oversize length, LAST flag/length disagreement, structural mutations); fmt, clippy -D warnings, cargo deny | PASS |
+| New fuzz target `ble_frames` added to fuzz.yml | Compiles; NOT RUN yet (needs a manual dispatch of the fuzz workflow) |
+| Real-device checks (MTU 23 and negotiated, Indicate delivery/order, disconnects, two advertisers, wrong code, 60 s expiry, Windows GattSession) | NOT RUN |
+
+### D026 addendum (crowded places, Notify fallback, failure counting) — 2026-11-06
+
+| Check | Actual outcome |
+|---|---|
+| handshake.rs: only attempts that already sent M3 count (bad M4 tag, second M2, abandonment after M3); malformed M2 and M4-before-M3 are free | Implemented. Core: 40 unit + 41 handshake tests; one old test replaced by four tests of the new rule; FFI test updated; C consumer 75 checks and C++ consumer 55 checks pass locally on MSVC; workspace total 125 tests, 0 failed; fmt, clippy -D warnings, cargo deny clean |
+| ble_frame ACK chunk helpers for the Notify fallback (ack_chunk, parse_ack; data path rejects ACK flags) | Implemented with one added test |
+| BLE_GATT_SPEC.md updated: scan-response tag `KL-XXXX`, signal-sorted list, user selection, Notify + ACK, no auto-connect | DRAFT, not reviewed by platform sessions, not run on devices |
+| Scan-response local name carrying the tag on iOS/Android/Windows; Notify stop-and-wait; look-alike tag behaviour | NOT RUN |
+
+### Receiver tag list and scan addendum — 2026-11-06
+
+| Check | Actual outcome |
+|---|---|
+| `selection.rs` (pure logic: tag validation, name/service-data agreement, duplicate-tag blocking, signal bars, stable sort, no default choice) written by a subagent and re-checked by the lead | 12 unit tests; workspace total 142 passing, 0 failed; fmt, clippy -D warnings and cargo deny clean; no `unsafe` in `ble.rs` or `selection.rs` |
+| `ble.rs` `scan_advertisements` (active scan, KL-V1 service filter, local name and 128-bit service-data parsing) and `ble-list [--seconds N] [--choose N]` CLI | Builds; 5 parser unit tests pass. The CLI prints only the tag, a signal bar and a reason, never an address, device name, grouping key or raw signal value (checked by reading the output code and by a grep) |
+| Real run on the lead PC | `ble-list --seconds 6`: "No KagiLink senders found" (no phone advertises the new KL-V1 service yet). The path from a real advertisement to a printed row has NOT run on hardware |
+| Connect step after selection, indication/notify subscription, M1..M4 over the new GATT service, the phones' advertising of the tag | NOT IMPLEMENTED |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;
@@ -68,7 +249,7 @@ cryptographic evidence. No production memory zeroization has been implemented.
    MTU/disconnect/permission/radio-off tests; identify adapter/OS configurations.
 3. Verify input safety separately for ordinary windows, CredUI and mstsc. Current
    official restrictions prevent claiming supported non-elevated credential input.
-4. Resolve audited/reviewed SPAKE2 suite and memory lifecycle, then freeze vectors.
+4. Resolve audited/reviewed CPace suite (D013) and memory lifecycle, then freeze vectors.
 5. Only after Phase 0 exit, implement security core and native hardware adapters.
 
 No real credentials have been used. No production memory-clearing guarantees,
@@ -346,3 +527,34 @@ This is Phase 0 diagnostic UI. Android/Apple SDK compilation, real-device exchan
 hardware key operations, production security-core selection and native product UI
 remain incomplete. No release/signing/store/server action is authorized by this
 diagnostic implementation.
+
+### D021 binding spikes: Swift (macOS/iOS) and Kotlin/JNI (Android), reported 2026-11-06
+
+Both spikes call the shared C ABI (`kagilink.h`) from the native language and port the
+`tests/c/consumer.c` scenarios. Results are as REPORTED by the platform sessions; the lead
+session has checked the PR file lists and CI state but has not rerun the device tests.
+Neither PR is merged (merge is the owner's decision).
+
+| Spike | PR | Reported result | Notes / limits |
+|---|---|---|---|
+| Android Kotlin/JNI (`apps/android/ffi-spike`) | #5 | Galaxy S24 (SM-S921N, Android 16): 78 checks, 0 failures, exit 0; library exports only 18 JNI symbols | Run via `app_process` from /data/local/tmp, no app install. NULL-pointer-with-nonzero-length cases cannot occur from Kotlin (array becomes (NULL,0)); replaced by NULL output handle, zero handle and size-query checks, so 78 is not 1:1 with the 75 C checks. `panic=abort` not applied (catch_unwind fallback only). StrongBox, Keystore, BLE NOT verified. |
+| Apple Swift (`apps/apple/KagiLinkCore`) | #6 | macOS `swift test`: 8 scenarios pass; iPhone 15 Pro: same 8 scenarios, 50 checks pass; 7 existing contract tests pass | On device it ran in a scratch app shell with an XCTest shim, not real XCTest (package tests need a host app on device). iOS simulator not run (owner decision). Built with `panic=abort`, so the KL_ERR_PANIC path is unreachable and untested. `kl_status_t` imports as UInt32 in Swift; the wrapper converts to Int32. Signing: existing AreaTM team, existing Apple Development certificate and existing wildcard profile; no new certificate, device registration or upload. |
+
+Common finding: no ABI or header problem found by either binding. Scenarios covered on both: handshake,
+fragmented SECRET round trip, approval consumption, wrong code, D026 failure counting (Swift: five
+pre-M3 errors cost no budget, three post-M3 failures then TOO_MANY_FAILURES), tamper closes the
+channel, small buffers. Still NOT verified: BLE transport, Keystore/Secure Enclave key use,
+`panic=abort` on Android, real XCTest on device, review of the FFI `unsafe`.
+
+### Windows receiver: session driver, fake phone and GATT connect code (2026-11-06)
+
+| Item | State |
+|---|---|
+| `session.rs`: transport-agnostic `GattLink` trait and `run_attempt` (chunking, reassembly, Notify ACK, 10 s first-chunk and 5 s message timeouts, M1-M4, SECRET, RESULT) | implemented; fake-phone tests PASS |
+| `fake_sender.rs`: in-process KL-V1 phone using the real core sender; behaviours honest, wrong code, garbage M2, tampered M4, tampered SECRET, silent, drop after M3, duplicate chunk, skipped chunk, oversize length; Notify mode enforces stop-and-wait ACK | PASS (7 integration tests: chunk sizes 20-244 in Indicate and Notify, D026 counting through the driver, budget exhaustion, consumed code) |
+| `selection.rs`: opaque `ConnectTarget` for the chosen row (Debug redacted, same refusals as `choose`) | PASS |
+| `ble_link.rs`: WinRT connect, uncached KL-V1 discovery, Indicate preferred else Notify, subscribe before first write, write-with-response, disconnect detection | COMPILES ONLY. NOT RUN against any peripheral: no phone advertises the production service yet. |
+| CLI `fake-session [--behaviour B] [--chunk N] [--notify]` | runs (honest OK; wrong code and tampered M4 fail closed) |
+| CLI `ble-receive`: risk notice, code shown first, active scan, user picks a row, connect, one attempt | COMPILES ONLY, NOT RUN |
+
+Workspace: 150 tests pass, clippy `-D warnings` clean. The fake phone proves driver and framing logic, not real BLE behaviour (MTU, indication delivery, scan-response merging all remain unmeasured). Real-secret transfer stays disabled (D012).

@@ -8,7 +8,7 @@ work. Agent policy is defined only in ../AGENTS.md. This table maps acceptance e
 |---|---|---|
 | R01 | Offline BLE, no accounts/remote auth/telemetry | Packet/network observation on real apps; NOT RUN |
 | R02 | Six digits, CSPRNG, 60s, max 3 failures | Synthetic TTL/failure model only; CSPRNG not implemented |
-| R03 | SPAKE2, mutual confirmation, authenticated context | RFC vectors + wrong code/context tests; NOT IMPLEMENTED |
+| R03 | CPace (D013), mutual confirmation, authenticated context | CPace draft vectors + wrong code/context tests; NOT IMPLEMENTED |
 | R04 | HKDF + AES-256-GCM, independent keys/nonces | Vectors, tamper/replay/exhaustion tests; NOT IMPLEMENTED |
 | R05 | Bounded fragments, strict order, disconnect cleanup | Model tests; separate fixed-value native diagnostic sources, actual transport NOT RUN |
 | R06 | Approval every transfer, single use, no reuse | Synthetic model only; native approval NOT IMPLEMENTED |

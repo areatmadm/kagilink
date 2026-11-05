@@ -1,0 +1,25 @@
+[package]
+name = "areatm-kagilink-receiver"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "KagiLink Windows receiver skeleton in Rust (D022/D024): trust policy, risk-notice gate, core handshake in loopback. No BLE, no target input, synthetic data only."
+
+[dependencies]
+areatm-kagilink-core = { path = "../../../../core/kagilink-core" }
+areatm-tpm-probe = { path = "../tpm-probe" }
+rand_core = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = [
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_Advertisement",
+    "Devices_Bluetooth_GenericAttributeProfile",
+    "Foundation",
+    "Foundation_Collections",
+    "Storage_Streams",
+] }

@@ -1,0 +1,50 @@
+name: KagiLink coverage-guided fuzzing (manual, synthetic data only, D016/D019)
+# Manual start only: no pull_request or push trigger, so fork code never runs here.
+# Read-only token, no secrets. Pinned nightly and pinned third-party actions.
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Seconds to fuzz each target (60-3600)"
+        required: false
+        default: "300"
+permissions:
+  contents: read
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [hello_decode, handshake_messages, channel_fragments, ffi_calls, ble_frames]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate duration
+        env:
+          SECONDS_INPUT: ${{ inputs.seconds }}
+        run: |
+          case "$SECONDS_INPUT" in ''|*[!0-9]*) echo "seconds must be a number"; exit 1;; esac
+          if [ "$SECONDS_INPUT" -lt 60 ] || [ "$SECONDS_INPUT" -gt 3600 ]; then
+            echo "seconds must be 60-3600"; exit 1
+          fi
+          echo "FUZZ_SECONDS=$SECONDS_INPUT" >> "$GITHUB_ENV"
+      - name: Install pinned nightly
+        run: rustup toolchain install nightly-2026-11-01 --profile minimal
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b
+        with:
+          tool: cargo-fuzz
+      - name: Fuzz ${{ matrix.target }}
+        working-directory: core/kagilink-core
+        run: >
+          cargo +nightly-2026-11-01 fuzz run ${{ matrix.target }}
+          --fuzz-dir fuzz --target x86_64-unknown-linux-gnu -- -max_total_time=${FUZZ_SECONDS} -rss_limit_mb=2048
+      - name: Keep crash inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: core/kagilink-core/fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: warn

@@ -65,7 +65,7 @@ API result and synthetic outcome. Avoid collecting usernames or device addresses
 
 ## Phase 1+ mandatory tests
 
-SPAKE2 public vectors, wrong code, invalid group values, failed mutual confirmation,
+CPace public vectors (draft Appendix B), wrong code, invalid group values, failed mutual confirmation,
 context/role/version/purpose/identity tamper; HKDF/AES known-answer vectors, tag
 tamper, prior session replay, directional key separation, counter overflow and nonce
 uniqueness; global rate limit; disconnect/crash/cancel/drop/FFI cleanup; hardware API
@@ -76,3 +76,43 @@ Run sanitizers where supported, static analysis, advisory/license scans, and
 cross-OS vector/FFI interoperability. Inspect every secret-bearing log/file/temp/
 clipboard/crash path. Zeroization tests must not claim arbitrary dumps/copies are
 impossible. UI tests include screenreader, keyboard, large fonts and small screens.
+
+## Phase 1 core test matrix (core/kagilink-core)
+
+Synthetic data only, manual clock and OS RNG. Status column records the local debug run of
+2026-11-04 (`cargo test --workspace`: 29 transport unit tests and 38 handshake tests pass).
+PASS means these synthetic tests passed; it is not an audit, a security proof or a
+side-channel/memory review.
+
+| Area | Case | Status |
+|---|---|---|
+| Code | Generation format (six ASCII digits) and rejection-sampling bound, no modulo bias | PASS for format and digit coverage; the rejection-sampling bound is not separately unit-tested |
+| Code | Parse rejects wrong length, non-digits, non-ASCII, whitespace | PASS |
+| Wire | Hello strict parsing: truncation, trailing bytes, over-length fields, wrong magic/type, wrong version, wrong suite | PASS |
+| Handshake | Happy path, sender and receiver both reach a channel and exchange messages | PASS |
+| Handshake | Wrong code: both sides detect via confirmation failure | PASS |
+| Handshake | Tampered M1, M2, M3, M4 for each byte class (header, nonce/sid, claims, share, tag) | PASS |
+| Handshake | Replayed M2 and M4 rejected | PASS |
+| Handshake | Wrong-state ordering (M4 before M2, M2 before M1, duplicate messages) | PASS |
+| Lifecycle | TTL expiry at 60 s, just before (accepted) and just after (refused) | PASS |
+| Lifecycle | Three failures destroy the code; fourth attempt refused | PASS |
+| Lifecycle | Success consumes the code; reuse refused | PASS |
+| Lifecycle | Attempt abandoned by begin_attempt BEFORE M3 is free (D026) | PASS |
+| Lifecycle | Attempt abandoned after M3 counts as a failure (D026) | PASS |
+| Lifecycle | Malformed M2 and M4-before-M3 do not use the budget; bad M4 after M3 does, three destroy the code (D026) | PASS |
+| Keys | Session keys, sid and nonces differ across sessions with the same code | PARTIAL: sessions with different sids are shown not to interoperate; key/sid/nonce inequality is not asserted directly |
+| Keys | Directional key separation (s2r vs r2s, confirmation vs AEAD) | PARTIAL: wrong-direction replay is rejected in transport tests; confirmation-vs-AEAD key separation is not asserted directly |
+| Transport | AEAD tamper (ciphertext, tag, header, AAD fields) closes channel, no plaintext | PASS |
+| Transport | Replayed, reordered, duplicated or missing fragment/message rejected | PASS |
+| Transport | Nonce counter strictness and terminal exhaustion at 2^20 | PASS |
+| Transport | Channel expires at the original code deadline | PASS |
+| Transport | SECRET approval consumed once; second SECRET send refused | PASS |
+| Transport | SECRET receive requires receiver readiness | PASS |
+| Cleanup | Zeroize on close (best effort; structural test only, no memory-dump claim) | PASS (structural only: key arrays read as zero after close; no memory-dump claim) |
+
+Coverage-guided fuzz targets exist (core/kagilink-core/fuzz, manual workflow fuzz.yml; 15-minute runs recorded in IMPLEMENTATION_STATUS.md; small, not an assurance level). Deterministic mutation tests (tests/mutation.rs, 2026-11-05) cover parsers, handshake messages and
+fragments with fixed seeds; they are not coverage-guided fuzzing. Not covered by this matrix:
+coverage-guided fuzzing of parsers and framing, cross-language and draft
+Appendix B vectors (a selection gate that remains open), constant-time and side-channel
+review, memory dump review, real BLE, hardware keys, FFI, target input and RDP. These
+remain mandatory before any real-secret use (see Phase 1+ mandatory tests above).

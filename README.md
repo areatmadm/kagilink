@@ -18,7 +18,7 @@ Windows 진단 창은 빌드 후 `target/phase0/kagilink.exe`를 더블클릭해
 안정 SDK 기준, iOS는 iPhone Duo 대응을 위해 SDK 27.1로 빌드합니다. 두 모바일
 화면에 Liquid Glass 스타일을 적용하며, 기기별 렌더링·접근성 검증은 남아 있습니다.
 
-Windows 보안 업데이트의 자격 증명 입력 제한과 SPAKE2 구현 선정 문제가
+Windows 보안 업데이트의 자격 증명 입력 제한과 CPace 구현 선정 문제가
 출시 전제조건입니다. 수신 PC가 감염되면 복호화된 비밀번호가 노출될 수 있습니다.
 
 ## 로컬 합성 검증

@@ -23,7 +23,8 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
   `shared/ai/` (areatmadm/kagilink-ai-memory). Never use USERPROFILE, HOME, personal
   agent memory folders or another user-directory location for these records.
 - BEFORE reading, listing, searching, loading or writing ANY files under
-  `shared/ai/`, run `pwsh -NoProfile -File tools/Test-AiMemoryAccess.ps1` and check
+  `shared/ai/`, run `pwsh -NoProfile -File tools/Test-AiMemoryAccess.ps1` (on macOS/Linux without
+  PowerShell: `sh tools/test-ai-memory-access.sh`, identical checks, owner-approved D018) and check
   its exit code. Only exit 0 authorizes access in the current task. This checks
   the active authenticated GitHub API identity is exactly `areatmadm`, and that
   `areatmadm/kagilink-ai-memory` is private with that owner and readable by it.
@@ -48,6 +49,14 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
   access controls remote retrieval; existing local copies remain readable to any
   OS account/process with filesystem permission. Never claim otherwise.
 
+## Lead branch and succession (owner decision D015)
+
+- Windows `main` is the lead (reference) branch. Other platforms align to its core,
+  docs/PROTOCOL.md and docs/DECISIONS.md; on conflict the Windows side wins.
+- If the lead is unavailable: 1) Windows, 2) cloud session, 3) macOS session. If none is
+  available, wait and make no new decisions. Android and iOS are not lead candidates.
+- Coordination only; it never weakens security policy or replaces owner approval.
+
 ## Scope and non-negotiable security policy
 
 - AreaTM; public Apache-2.0 project; website https://key.minori.in.
@@ -58,8 +67,9 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
 - No clipboard, plaintext files, debug secret output, privilege escalation,
   UIPI/UAC bypass, security desktop access, drivers, services or security disabling.
 - Use reviewed cryptographic libraries, not custom cryptography. Six decimal
-  digits are a PAKE password, never a raw encryption key. Require SPAKE2, explicit
-  mutual key confirmation, HKDF, AES-256-GCM, transcript binding, replay defense,
+  digits are a PAKE password, never a raw encryption key. Require CPace (CFRG-recommended
+  balanced PAKE; owner-approved 2026-11-04, replaces SPAKE2; SPAKE2 only by a new
+  approval), explicit mutual key confirmation, HKDF, AES-256-GCM, transcript binding, replay defense,
   nonce uniqueness, bounded BLE framing and fail-closed session lifecycle.
 - Code TTL 60 seconds, maximum three failures, discard at the limit. Codes,
   ephemeral keys and session keys must not be reused. Reconnect creates a fresh
@@ -79,7 +89,11 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
 - Hardware protects keys, not arbitrary password strings. Support explicit entry
   and OS-authorized autofill plus an app-specific encrypted vault with approval,
   update, deletion and device-loss guidance. Never read other apps' credentials.
-- Windows: portable C++20/C++/WinRT receiver, normal user, Windows BLE GATT.
+- Windows: portable receiver written in Rust (D022; the Phase 0 C++20/C++/WinRT probe stays as
+  a research tool), normal user, Windows BLE GATT, no FFI boundary on Windows. TPM 2.0 use is
+  being studied under D022 and must not claim device integrity it cannot prove. Receiver trust policy
+  (D024): TPM claim passes -> proceed and show boot state; TPM present but claim fails -> block;
+  no TPM -> labelled RAM-only mode with a strong warning.
   TPM 2.0 preferred; accurately labelled RAM-only temporary mode allowed.
 - Desktop receivers initially BLE Central, mobile senders Peripheral. Sender
   advertises; receiver scans. The logical receiver still creates/displays the
@@ -87,7 +101,10 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
 - Windows RDP input requires feasibility evidence first. Unsupported/blocked
   input must fail. Do not enable real-secret transfer until safe target input
   is demonstrated. Queued keystrokes are not proof of delivery or RDP login.
-- Warn that compromised receiving computers can expose decrypted credentials.
+- Warn that compromised receiving computers can expose decrypted credentials. Before the first
+  transfer to a receiver (and whenever the receiver changes) the sending app must show the short
+  notice from docs/RISK_NOTICE.md and require explicit acknowledgment (D023). No UI may call a PC
+  "safe" or "verified safe"; device/TPM results are shown as claims.
   Local tamper checks cannot prove complete offline integrity.
 
 ## Workflow

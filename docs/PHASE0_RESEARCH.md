@@ -49,7 +49,7 @@ server callbacks are required, not just compile success.
    integrity; foreground sender advertises and exchanges synthetic GATT messages.
 2. Record ordinary edit, CredUI, mstsc, secure desktop and focus-change behavior
    separately using synthetic data. Do not disable protections to get a pass.
-3. Select a reviewed SPAKE2 implementation/suite with compatibility vectors,
+3. Select a reviewed CPace implementation/suite (D013; was SPAKE2) with compatibility vectors,
    license/maintenance/advisory/memory-lifecycle evidence (DEPENDENCY_REVIEW.md).
 4. Define supported configurations and fail-closed target/approval gates.
 

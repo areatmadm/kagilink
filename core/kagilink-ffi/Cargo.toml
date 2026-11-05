@@ -1,0 +1,22 @@
+[package]
+name = "areatm-kagilink-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "KagiLink plain C ABI over areatm-kagilink-core (D016). The only crate allowed to contain unsafe. Synthetic-data only until independent review."
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# NOTE (docs/FFI_DESIGN.md): the design wants `panic = "abort"` for release builds of this
+# crate. Cargo ignores `[profile.*]` in workspace member manifests, so it must be set in the
+# workspace root or via the build command (e.g. `-C panic=abort`) by the packaging step.
+# Until then every export is wrapped in catch_unwind (KL_ERR_PANIC) as the fallback.
+
+[dependencies]
+areatm-kagilink-core = { path = "../kagilink-core" }
+zeroize = "1"
