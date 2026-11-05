@@ -15,6 +15,13 @@ to the private repository. No memory may be stored in USER/HOME folders.
 pwsh -NoProfile -File tools/Test-AiMemoryAccess.ps1
 ```
 
+On macOS/Linux without PowerShell use the POSIX sh equivalent (same checks and exit codes;
+needs only the GitHub CLI `gh` signed in as areatmadm):
+
+```sh
+sh tools/test-ai-memory-access.sh
+```
+
 Exit 0: active GitHub API identity is exactly areatmadm; the exact expected private
 repository and readable access were verified. Only then may an agent inspect the
 private directory, its README, conversation index and latest record. Recheck at the

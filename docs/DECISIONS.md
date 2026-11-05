@@ -234,3 +234,16 @@ and licenses only and are not an audit; independent review of the exact locked v
 still required before real-secret use (D012). Wiring them into GitHub Actions is part of the
 release-preparation work and is not done. Deterministic mutation tests were added; coverage-guided
 fuzzing remains open.
+
+
+## D018 — POSIX sh memory-access gate, 2026-11-05
+
+Owner (lead session) approved `tools/test-ai-memory-access.sh` as an equivalent of
+`tools/Test-AiMemoryAccess.ps1` so macOS/Linux sessions need not install PowerShell. Checks and
+exit codes are identical: `gh` present, authenticated login exactly `areatmadm`, and
+`areatmadm/kagilink-ai-memory` private, owned by areatmadm and pullable (exact, case-sensitive,
+JSON boolean true). Any failure prints only the generic denial and exits 1. Verified on
+Windows (Git Bash): allowed with the real login; denied with no `gh` on PATH; denied with an
+invalid token. NOT verified: on macOS itself, and the wrong-account case. The ps1 remains the
+reference; `tests/security/test-ai-memory-gate.ps1` does not cover the sh script yet. Docker
+was rejected: it would require passing credentials into a container.
