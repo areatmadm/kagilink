@@ -447,3 +447,15 @@ explicit acknowledgment before the first transfer to a receiver and whenever the
 UIs never call a PC "safe"; device/TPM information is shown as a claim. The disclaimer does not relax
 any technical requirement (PAKE, key confirmation, TTL, approvals, fail-closed behaviour) and does not
 replace the recommendation to send only one-time or soon-to-be-changed passwords.
+
+
+### D023 clarification: design effort versus detection duty, 2026-11-05
+
+Owner direction: the design uses every available resource to be safe, but KagiLink has no duty to
+detect keyloggers or other malware already installed on a receiving PC (software or hardware), and
+it must not claim to. Meaning: (1) everything KagiLink itself controls stays at the strongest
+practical level (PAKE, key confirmation, TTL, approvals, zeroization, hardware-backed keys where
+available, fail-closed behaviour, minimal exposure of plaintext); (2) detection of pre-existing
+compromise is out of scope and is not a requirement, a release gate or a test goal; (3) optional,
+clearly labelled best-effort hints (for example reporting the TPM/boot-state claims) may be added
+but are never presented as a safety verdict; (4) docs/RISK_NOTICE.md says so in plain words.
