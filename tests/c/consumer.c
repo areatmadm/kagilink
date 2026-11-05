@@ -244,6 +244,244 @@ static void test_null_and_buffers(void) {
     CHECK(kl_channel_is_closed(NULL) == 1);
 }
 
+/* ---- BLE chunk codec (ABI v2) ---- */
+
+#define MAXMSG 512
+#define MAXCHUNKS 300
+
+typedef struct {
+    uint8_t data[MAXMSG * 3];
+    size_t off[MAXCHUNKS];
+    size_t len[MAXCHUNKS];
+    size_t count;
+} Chunks;
+
+static void make_msg(uint8_t* m, size_t n) {
+    size_t i;
+    for (i = 0; i < n; i++) m[i] = (uint8_t)(i * 31 + 7);
+}
+
+/* Chunk through the ABI and split the length-prefixed output. */
+static kl_status_t chunk_all(uint8_t mtype, const uint8_t* msg, size_t msg_len, size_t max_chunk,
+                             Chunks* c) {
+    uint8_t packed[MAXMSG * 3];
+    size_t n = sizeof packed, cnt = 0, off = 0, i, used = 0;
+    kl_status_t st = kl_frame_chunk(mtype, msg, msg_len, max_chunk, packed, &n, &cnt);
+    if (st != KL_OK) return st;
+    if (cnt > MAXCHUNKS) return KL_ERR_LIMITS;
+    for (i = 0; i < cnt; i++) {
+        uint32_t l = be32(packed + off);
+        c->off[i] = used;
+        c->len[i] = l;
+        memcpy(c->data + used, packed + off + 4, l);
+        used += l;
+        off += 4 + (size_t)l;
+    }
+    c->count = cnt;
+    return off == n ? KL_OK : KL_ERR_MALFORMED;
+}
+
+static kl_status_t push_chunk(kl_reassembler_t* h, const Chunks* c, size_t i, uint8_t* done) {
+    return kl_reassembler_push(h, c->data + c->off[i], c->len[i], done);
+}
+
+static void test_frame_round_trip(void) {
+    static const size_t lens[] = {1, 2, 5, 19, 20, 64, 65, 255, 269, 274, 300, 511, 512};
+    uint8_t msg[MAXMSG], back[MAXMSG + 8];
+    static Chunks c;
+    kl_reassembler_t* h = NULL;
+    size_t max_chunk, li, i;
+
+    CHECK(kl_reassembler_new(&h) == KL_OK && h != NULL);
+    for (max_chunk = 20; max_chunk <= 244; max_chunk++) {
+        for (li = 0; li < sizeof lens / sizeof lens[0]; li++) {
+            size_t len = lens[li], n = sizeof back;
+            uint8_t mtype = (len % 2 == 0) ? KL_MTYPE_HANDSHAKE : KL_MTYPE_CHANNEL;
+            uint8_t t = 0, done = 9;
+            int ok = 1;
+            make_msg(msg, len);
+            if (chunk_all(mtype, msg, len, max_chunk, &c) != KL_OK) {
+                CHECK(0);
+                continue;
+            }
+            for (i = 0; i < c.count; i++) {
+                if (c.len[i] > max_chunk || push_chunk(h, &c, i, &done) != KL_OK ||
+                    (done == 1) != (i + 1 == c.count))
+                    ok = 0;
+            }
+            CHECK(ok);
+            CHECK(kl_reassembler_take(h, &t, back, &n) == KL_OK);
+            CHECK(t == mtype && n == len && memcmp(back, msg, len) == 0);
+        }
+    }
+    CHECK(kl_reassembler_is_dead(h) == 0);
+    kl_reassembler_free(h);
+}
+
+static void test_frame_errors(void) {
+    uint8_t msg[200];
+    static Chunks c;
+    kl_reassembler_t* h = NULL;
+    uint8_t done = 0, bad[64];
+
+    make_msg(msg, sizeof msg);
+    CHECK(chunk_all(KL_MTYPE_CHANNEL, msg, sizeof msg, 20, &c) == KL_OK);
+    CHECK(c.count > 4);
+
+    /* duplicate */
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    CHECK(push_chunk(h, &c, 0, &done) == KL_OK && done == 0);
+    CHECK(push_chunk(h, &c, 0, &done) == KL_ERR_FRAMING);
+    CHECK(kl_reassembler_is_dead(h) == 1);
+    CHECK(push_chunk(h, &c, 1, &done) == KL_ERR_CLOSED);
+    kl_reassembler_free(h);
+
+    /* gap */
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    CHECK(push_chunk(h, &c, 0, &done) == KL_OK);
+    CHECK(push_chunk(h, &c, 2, &done) == KL_ERR_FRAMING);
+    kl_reassembler_free(h);
+
+    /* reorder */
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    CHECK(push_chunk(h, &c, 0, &done) == KL_OK);
+    CHECK(push_chunk(h, &c, 1, &done) == KL_OK);
+    CHECK(push_chunk(h, &c, 3, &done) == KL_ERR_FRAMING);
+    kl_reassembler_free(h);
+
+    /* reserved bit */
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    memcpy(bad, c.data + c.off[0], c.len[0]);
+    bad[0] |= 0x08;
+    CHECK(kl_reassembler_push(h, bad, c.len[0], &done) == KL_ERR_MALFORMED);
+    CHECK(kl_reassembler_is_dead(h) == 1);
+    kl_reassembler_free(h);
+
+    /* declared length 513 (oversize) */
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    memcpy(bad, c.data + c.off[0], c.len[0]);
+    bad[3] = 0x02;
+    bad[4] = 0x01;
+    CHECK(kl_reassembler_push(h, bad, c.len[0], &done) == KL_ERR_LIMITS);
+    kl_reassembler_free(h);
+
+    /* oversize chunk, empty chunk, ACK chunk as data */
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    {
+        static uint8_t big[513];
+        memset(big, 1, sizeof big);
+        CHECK(kl_reassembler_push(h, big, sizeof big, &done) == KL_ERR_MALFORMED);
+    }
+    kl_reassembler_free(h);
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    CHECK(kl_reassembler_push(h, NULL, 0, &done) == KL_ERR_MALFORMED);
+    kl_reassembler_free(h);
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    bad[0] = 0x04;
+    bad[1] = 0;
+    CHECK(kl_reassembler_push(h, bad, 2, &done) == KL_ERR_MALFORMED);
+    kl_reassembler_free(h);
+
+    /* chunking input errors */
+    {
+        uint8_t out[64];
+        size_t n = sizeof out, cnt = 0;
+        CHECK(kl_frame_chunk(0, msg, 10, 20, out, &n, &cnt) == KL_ERR_LIMITS);
+        CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, msg, 0, 20, out, &n, &cnt) == KL_ERR_LIMITS);
+        CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, msg, 10, KL_FRAME_MIN_CHUNK - 1, out, &n,
+                             &cnt) == KL_ERR_LIMITS);
+        CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, msg, 10, KL_FRAME_MAX_CHUNK + 1, out, &n,
+                             &cnt) == KL_ERR_LIMITS);
+    }
+}
+
+static void test_frame_null_and_buffers(void) {
+    uint8_t msg[100], out[8], big[1024], held[100], t = 0, done = 0;
+    size_t n, cnt = 0, required, tiny_n;
+    static Chunks c;
+    kl_reassembler_t* h = NULL;
+    size_t i;
+
+    make_msg(msg, sizeof msg);
+    n = sizeof out;
+    CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, NULL, 5, 20, out, &n, &cnt) == KL_ERR_NULL);
+    CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, msg, sizeof msg, 20, out, NULL, &cnt) == KL_ERR_NULL);
+    CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, msg, sizeof msg, 20, out, &n, NULL) == KL_ERR_NULL);
+    /* size query */
+    n = 0;
+    CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, msg, sizeof msg, 20, NULL, &n, &cnt) ==
+          KL_ERR_BUFFER);
+    required = n;
+    CHECK(required > sizeof msg && cnt == 0);
+    /* tiny buffer: nothing written */
+    memset(out, 0, sizeof out);
+    n = sizeof out;
+    CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, msg, sizeof msg, 20, out, &n, &cnt) ==
+          KL_ERR_BUFFER);
+    CHECK(n == required && out[0] == 0 && out[7] == 0);
+    /* exact buffer */
+    n = required;
+    CHECK(kl_frame_chunk(KL_MTYPE_CHANNEL, msg, sizeof msg, 20, big, &n, &cnt) == KL_OK);
+    CHECK(n == required);
+    CHECK(chunk_all(KL_MTYPE_CHANNEL, msg, sizeof msg, 20, &c) == KL_OK && c.count == cnt);
+
+    /* reassembler NULLs */
+    CHECK(kl_reassembler_new(NULL) == KL_ERR_NULL);
+    CHECK(kl_reassembler_push(NULL, msg, 3, &done) == KL_ERR_NULL);
+    CHECK(kl_reassembler_is_dead(NULL) == 1);
+    kl_reassembler_free(NULL);
+    CHECK(kl_reassembler_new(&h) == KL_OK);
+    CHECK(kl_reassembler_push(h, c.data, c.len[0], NULL) == KL_ERR_NULL);
+    CHECK(kl_reassembler_push(h, NULL, 4, &done) == KL_ERR_NULL);
+    CHECK(kl_reassembler_is_dead(h) == 0);
+    n = sizeof held;
+    CHECK(kl_reassembler_take(NULL, &t, held, &n) == KL_ERR_NULL);
+    CHECK(kl_reassembler_take(h, NULL, held, &n) == KL_ERR_NULL);
+    CHECK(kl_reassembler_take(h, &t, held, &n) == KL_ERR_WRONG_STATE); /* nothing held */
+
+    /* complete, then tiny take buffer keeps the message held */
+    for (i = 0; i < c.count; i++) CHECK(push_chunk(h, &c, i, &done) == KL_OK);
+    CHECK(done == 1);
+    CHECK(push_chunk(h, &c, 0, &done) == KL_ERR_WRONG_STATE);
+    CHECK(kl_reassembler_is_dead(h) == 0);
+    tiny_n = 4;
+    CHECK(kl_reassembler_take(h, &t, held, &tiny_n) == KL_ERR_BUFFER);
+    CHECK(tiny_n == sizeof msg);
+    n = 0;
+    CHECK(kl_reassembler_take(h, &t, NULL, &n) == KL_ERR_BUFFER && n == sizeof msg);
+    n = sizeof held;
+    CHECK(kl_reassembler_take(h, &t, held, &n) == KL_OK);
+    CHECK(t == KL_MTYPE_CHANNEL && n == sizeof msg && memcmp(held, msg, sizeof msg) == 0);
+    kl_reassembler_free(h);
+}
+
+static void test_ack(void) {
+    uint8_t ack[2], is_ack = 9, seq = 9, one[1];
+    size_t n = sizeof ack, n1 = sizeof one;
+    int s;
+
+    for (s = 0; s < 256; s += 51) {
+        n = sizeof ack;
+        CHECK(kl_ack_chunk((uint8_t)s, ack, &n) == KL_OK && n == 2);
+        CHECK(kl_parse_ack(ack, 2, &is_ack, &seq) == KL_OK);
+        CHECK(is_ack == 1 && seq == (uint8_t)s);
+    }
+    CHECK(kl_ack_chunk(255, ack, &n) == KL_OK);
+    CHECK(kl_parse_ack(ack, 2, &is_ack, &seq) == KL_OK && is_ack == 1 && seq == 255);
+    CHECK(kl_ack_chunk(1, one, &n1) == KL_ERR_BUFFER && n1 == 2);
+    CHECK(kl_ack_chunk(1, ack, NULL) == KL_ERR_NULL);
+    CHECK(kl_ack_chunk(1, NULL, &n) == KL_ERR_NULL);
+    /* not an ACK: OK status, flag cleared */
+    ack[0] = 0x01;
+    ack[1] = 1;
+    CHECK(kl_parse_ack(ack, 2, &is_ack, &seq) == KL_OK && is_ack == 0 && seq == 0);
+    CHECK(kl_parse_ack(ack, 1, &is_ack, &seq) == KL_OK && is_ack == 0);
+    CHECK(kl_parse_ack(NULL, 0, &is_ack, &seq) == KL_OK && is_ack == 0);
+    CHECK(kl_parse_ack(NULL, 2, &is_ack, &seq) == KL_ERR_NULL);
+    CHECK(kl_parse_ack(ack, 2, NULL, &seq) == KL_ERR_NULL);
+    CHECK(kl_parse_ack(ack, 2, &is_ack, NULL) == KL_ERR_NULL);
+}
+
 int main(void) {
     if (kl_abi_version() != KL_ABI_VERSION) {
         fprintf(stderr, "ABI mismatch: library %u, header %u\n", (unsigned)kl_abi_version(),
@@ -255,6 +493,10 @@ int main(void) {
     test_wrong_code();
     test_tamper_closes_channel();
     test_null_and_buffers();
+    test_frame_round_trip();
+    test_frame_errors();
+    test_frame_null_and_buffers();
+    test_ack();
     printf("C consumer: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

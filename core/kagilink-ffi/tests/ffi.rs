@@ -147,8 +147,9 @@ unsafe fn seal(c: *mut kl_channel_t, kind: u8, pt: &[u8], frag: usize) -> (Vec<u
 }
 
 #[test]
-fn abi_version_is_one() {
-    assert_eq!(kl_abi_version(), 1);
+fn abi_version_is_two() {
+    assert_eq!(kl_abi_version(), 2);
+    assert_eq!(KL_ABI_VERSION, 2);
 }
 
 #[test]
@@ -641,4 +642,392 @@ fn status_values_are_stable() {
     assert_eq!(KL_ERR_RANDOMNESS as i32, 17);
     assert_eq!(KL_ERR_NULL as i32, 100);
     assert_eq!(KL_ERR_ABI as i32, 104);
+}
+
+// ---------------------------------------------------------------------------------------
+// BLE chunk codec through the C ABI (ABI v2).
+// ---------------------------------------------------------------------------------------
+
+const MT_HS: u8 = 1;
+const MT_CH: u8 = 2;
+
+fn frame_msg(len: usize) -> Vec<u8> {
+    (0..len).map(|i| (i * 31 + 7) as u8).collect()
+}
+
+/// Chunk through the ABI and split the packed output into chunks.
+unsafe fn frame(mtype: u8, msg: &[u8], max_chunk: usize) -> Result<Vec<Vec<u8>>, kl_status_t> {
+    let mut out = vec![0u8; 4096];
+    let mut n = out.len();
+    let mut count = 0usize;
+    let rc = unsafe {
+        kl_frame_chunk(
+            mtype,
+            msg.as_ptr(),
+            msg.len(),
+            max_chunk,
+            out.as_mut_ptr(),
+            &mut n,
+            &mut count,
+        )
+    };
+    if rc != KL_OK {
+        return Err(rc);
+    }
+    let mut chunks = Vec::new();
+    let mut off = 0;
+    for _ in 0..count {
+        let l = u32::from_be_bytes(out[off..off + 4].try_into().unwrap()) as usize;
+        chunks.push(out[off + 4..off + 4 + l].to_vec());
+        off += 4 + l;
+    }
+    assert_eq!(off, n);
+    Ok(chunks)
+}
+
+unsafe fn push(h: *mut kl_reassembler_t, chunk: &[u8]) -> (kl_status_t, u8) {
+    let mut complete = 7u8;
+    let rc = unsafe { kl_reassembler_push(h, chunk.as_ptr(), chunk.len(), &mut complete) };
+    (rc, complete)
+}
+
+unsafe fn take(h: *mut kl_reassembler_t) -> (kl_status_t, u8, Vec<u8>) {
+    let mut out = vec![0u8; 600];
+    let mut n = out.len();
+    let mut t = 0u8;
+    let rc = unsafe { kl_reassembler_take(h, &mut t, out.as_mut_ptr(), &mut n) };
+    out.truncate(if rc == KL_OK { n } else { 0 });
+    (rc, t, out)
+}
+
+unsafe fn new_reasm() -> *mut kl_reassembler_t {
+    let mut h = null_mut();
+    assert_eq!(unsafe { kl_reassembler_new(&mut h) }, KL_OK);
+    assert!(!h.is_null());
+    h
+}
+
+#[test]
+fn frame_round_trip_across_chunk_sizes_and_lengths() {
+    unsafe {
+        let h = new_reasm();
+        for max_chunk in (20usize..=244).chain([6, 512]) {
+            for len in [1usize, 2, 5, 19, 20, 64, 65, 255, 269, 274, 300, 511, 512] {
+                let m = frame_msg(len);
+                let mtype = if len % 2 == 0 { MT_HS } else { MT_CH };
+                let chunks = frame(mtype, &m, max_chunk).unwrap();
+                assert!(chunks.iter().all(|c| c.len() <= max_chunk));
+                for (i, c) in chunks.iter().enumerate() {
+                    let (rc, done) = push(h, c);
+                    assert_eq!(rc, KL_OK);
+                    assert_eq!(done == 1, i + 1 == chunks.len());
+                }
+                let (rc, t, data) = take(h);
+                assert_eq!((rc, t, data), (KL_OK, mtype, m));
+                // Nothing left to take.
+                assert_eq!(take(h).0, KL_ERR_WRONG_STATE);
+            }
+        }
+        assert_eq!(kl_reassembler_is_dead(h), 0);
+        kl_reassembler_free(h);
+    }
+}
+
+#[test]
+fn frame_errors_are_fatal_and_distinct_cases_are_rejected() {
+    unsafe {
+        let m = frame_msg(200);
+        let chunks = frame(MT_CH, &m, 20).unwrap();
+        assert!(chunks.len() > 4);
+
+        // duplicate
+        let h = new_reasm();
+        assert_eq!(push(h, &chunks[0]).0, KL_OK);
+        assert_eq!(push(h, &chunks[0]).0, KL_ERR_FRAMING);
+        assert_eq!(kl_reassembler_is_dead(h), 1);
+        assert_eq!(push(h, &chunks[1]).0, KL_ERR_CLOSED);
+        kl_reassembler_free(h);
+
+        // gap
+        let h = new_reasm();
+        assert_eq!(push(h, &chunks[0]).0, KL_OK);
+        assert_eq!(push(h, &chunks[2]).0, KL_ERR_FRAMING);
+        assert_eq!(kl_reassembler_is_dead(h), 1);
+        kl_reassembler_free(h);
+
+        // reorder
+        let h = new_reasm();
+        assert_eq!(push(h, &chunks[0]).0, KL_OK);
+        assert_eq!(push(h, &chunks[1]).0, KL_OK);
+        assert_eq!(push(h, &chunks[3]).0, KL_ERR_FRAMING);
+        kl_reassembler_free(h);
+
+        // reserved flag bits (bit 3)
+        let h = new_reasm();
+        let mut bad = chunks[0].clone();
+        bad[0] |= 0b1000;
+        assert_eq!(push(h, &bad).0, KL_ERR_MALFORMED);
+        assert_eq!(kl_reassembler_is_dead(h), 1);
+        kl_reassembler_free(h);
+
+        // ACK flag in a data chunk and a bare ACK chunk are not data
+        let h = new_reasm();
+        let mut ackflag = chunks[0].clone();
+        ackflag[0] |= 0b100;
+        assert_eq!(push(h, &ackflag).0, KL_ERR_MALFORMED);
+        kl_reassembler_free(h);
+        let h = new_reasm();
+        assert_eq!(push(h, &[0b100, 0]).0, KL_ERR_MALFORMED);
+        kl_reassembler_free(h);
+
+        // oversize declared length (513) and zero length
+        for total in [513u16, 0] {
+            let h = new_reasm();
+            let mut c = chunks[0].clone();
+            c[3..5].copy_from_slice(&total.to_be_bytes());
+            assert_eq!(push(h, &c).0, KL_ERR_LIMITS);
+            kl_reassembler_free(h);
+        }
+
+        // unknown mtype
+        let h = new_reasm();
+        let mut c = chunks[0].clone();
+        c[2] = 9;
+        assert_eq!(push(h, &c).0, KL_ERR_UNSUPPORTED);
+        kl_reassembler_free(h);
+
+        // not starting at FIRST
+        let h = new_reasm();
+        assert_eq!(push(h, &chunks[1]).0, KL_ERR_FRAMING);
+        kl_reassembler_free(h);
+
+        // oversize chunk (513 bytes) and empty / header-only chunks
+        let h = new_reasm();
+        assert_eq!(push(h, &[1u8; 513]).0, KL_ERR_MALFORMED);
+        kl_reassembler_free(h);
+        let h = new_reasm();
+        let mut complete = 0u8;
+        assert_eq!(
+            kl_reassembler_push(h, null(), 0, &mut complete),
+            KL_ERR_MALFORMED
+        );
+        kl_reassembler_free(h);
+        let h = new_reasm();
+        assert_eq!(push(h, &[1, 0]).0, KL_ERR_MALFORMED);
+        kl_reassembler_free(h);
+
+        // LAST flag missing on the final chunk
+        let h = new_reasm();
+        let mut tail = chunks.clone();
+        let n = tail.len() - 1;
+        tail[n][0] &= !0b10;
+        for c in &tail[..n] {
+            assert_eq!(push(h, c).0, KL_OK);
+        }
+        assert_eq!(push(h, &tail[n]).0, KL_ERR_FRAMING);
+        kl_reassembler_free(h);
+    }
+}
+
+#[test]
+fn frame_chunking_rejects_bad_inputs_without_side_effects() {
+    unsafe {
+        let m = frame_msg(10);
+        assert_eq!(frame(0, &m, 20).unwrap_err(), KL_ERR_LIMITS);
+        assert_eq!(frame(3, &m, 20).unwrap_err(), KL_ERR_LIMITS);
+        assert_eq!(frame(MT_CH, &[], 20).unwrap_err(), KL_ERR_LIMITS);
+        assert_eq!(
+            frame(MT_CH, &frame_msg(513), 20).unwrap_err(),
+            KL_ERR_LIMITS
+        );
+        assert_eq!(frame(MT_CH, &m, 5).unwrap_err(), KL_ERR_LIMITS);
+        assert_eq!(frame(MT_CH, &m, 513).unwrap_err(), KL_ERR_LIMITS);
+        // Lengths over the FFI sanity bound are rejected before any read.
+        let mut n = 16usize;
+        let mut count = 0usize;
+        let mut out = [0u8; 16];
+        assert_eq!(
+            kl_frame_chunk(
+                MT_CH,
+                [0u8].as_ptr(),
+                1 << 21,
+                20,
+                out.as_mut_ptr(),
+                &mut n,
+                &mut count
+            ),
+            KL_ERR_LIMITS
+        );
+    }
+}
+
+#[test]
+fn frame_null_and_tiny_buffer_cases() {
+    unsafe {
+        let m = frame_msg(100);
+        let mp = m.as_ptr();
+        let ml = m.len();
+        let mut count = 0usize;
+        let mut out = [0u8; 8];
+        let mut n = out.len();
+        // NULL pointers
+        assert_eq!(
+            kl_frame_chunk(MT_CH, null(), 5, 20, out.as_mut_ptr(), &mut n, &mut count),
+            KL_ERR_NULL
+        );
+        assert_eq!(
+            kl_frame_chunk(MT_CH, mp, ml, 20, out.as_mut_ptr(), null_mut(), &mut count),
+            KL_ERR_NULL
+        );
+        assert_eq!(
+            kl_frame_chunk(MT_CH, mp, ml, 20, out.as_mut_ptr(), &mut n, null_mut()),
+            KL_ERR_NULL
+        );
+        // size query: capacity 0 and NULL out reports the required size, writes nothing
+        let mut n0 = 0usize;
+        assert_eq!(
+            kl_frame_chunk(MT_CH, mp, ml, 20, null_mut(), &mut n0, &mut count),
+            KL_ERR_BUFFER
+        );
+        let required = n0;
+        assert_eq!(count, 0);
+        let expected = frame(MT_CH, &m, 20).unwrap();
+        let want: usize = expected.iter().map(|c| 4 + c.len()).sum();
+        assert_eq!(required, want);
+        // tiny buffer
+        let mut n1 = 8usize;
+        assert_eq!(
+            kl_frame_chunk(MT_CH, mp, ml, 20, out.as_mut_ptr(), &mut n1, &mut count),
+            KL_ERR_BUFFER
+        );
+        assert_eq!(n1, required);
+        assert_eq!(out, [0u8; 8]);
+        // exactly sized buffer works
+        let mut exact = vec![0u8; required];
+        let mut n2 = required;
+        assert_eq!(
+            kl_frame_chunk(MT_CH, mp, ml, 20, exact.as_mut_ptr(), &mut n2, &mut count),
+            KL_OK
+        );
+        assert_eq!((n2, count), (required, expected.len()));
+
+        // reassembler: NULL handles and out pointers
+        let mut complete = 0u8;
+        assert_eq!(kl_reassembler_new(null_mut()), KL_ERR_NULL);
+        assert_eq!(
+            kl_reassembler_push(null_mut(), exact.as_ptr(), 3, &mut complete),
+            KL_ERR_NULL
+        );
+        let h = new_reasm();
+        assert_eq!(
+            kl_reassembler_push(h, expected[0].as_ptr(), expected[0].len(), null_mut()),
+            KL_ERR_NULL
+        );
+        assert_eq!(
+            kl_reassembler_push(h, null(), 4, &mut complete),
+            KL_ERR_NULL
+        );
+        // NULL errors did not kill it
+        assert_eq!(kl_reassembler_is_dead(h), 0);
+        let mut t = 0u8;
+        let mut n3 = 0usize;
+        assert_eq!(
+            kl_reassembler_take(null_mut(), &mut t, null_mut(), &mut n3),
+            KL_ERR_NULL
+        );
+        assert_eq!(
+            kl_reassembler_take(h, null_mut(), null_mut(), &mut n3),
+            KL_ERR_NULL
+        );
+        // nothing held yet
+        assert_eq!(
+            kl_reassembler_take(h, &mut t, null_mut(), null_mut()),
+            KL_ERR_WRONG_STATE
+        );
+        assert_eq!(kl_reassembler_is_dead(null_mut()), 1);
+        kl_reassembler_free(null_mut());
+
+        // tiny take buffer keeps the message held; push is refused meanwhile
+        for c in &expected {
+            assert_eq!(push(h, c).0, KL_OK);
+        }
+        assert_eq!(push(h, &expected[0]).0, KL_ERR_WRONG_STATE);
+        assert_eq!(kl_reassembler_is_dead(h), 0);
+        let mut tiny = [0u8; 4];
+        let mut n4 = tiny.len();
+        assert_eq!(
+            kl_reassembler_take(h, &mut t, tiny.as_mut_ptr(), &mut n4),
+            KL_ERR_BUFFER
+        );
+        assert_eq!(n4, m.len());
+        assert_eq!(tiny, [0u8; 4]);
+        let mut n5 = 0usize;
+        assert_eq!(
+            kl_reassembler_take(h, &mut t, null_mut(), &mut n5),
+            KL_ERR_BUFFER
+        );
+        assert_eq!(n5, m.len());
+        let (rc, mt, data) = take(h);
+        assert_eq!((rc, mt, data), (KL_OK, MT_CH, m));
+        // reusable for the next message after take
+        assert_eq!(push(h, &expected[0]).0, KL_OK);
+        kl_reassembler_free(h);
+    }
+}
+
+#[test]
+fn ack_round_trip_and_rejections() {
+    unsafe {
+        for seq in [0u8, 1, 127, 128, 255] {
+            let mut out = [0u8; 2];
+            let mut n = out.len();
+            assert_eq!(kl_ack_chunk(seq, out.as_mut_ptr(), &mut n), KL_OK);
+            assert_eq!(n, 2);
+            let (mut is_ack, mut got) = (9u8, 9u8);
+            assert_eq!(kl_parse_ack(out.as_ptr(), 2, &mut is_ack, &mut got), KL_OK);
+            assert_eq!((is_ack, got), (1, seq));
+        }
+        // buffer / null handling for kl_ack_chunk
+        let mut out = [0u8; 1];
+        let mut n = 1usize;
+        assert_eq!(kl_ack_chunk(3, out.as_mut_ptr(), &mut n), KL_ERR_BUFFER);
+        assert_eq!((n, out), (2, [0u8]));
+        assert_eq!(kl_ack_chunk(3, out.as_mut_ptr(), null_mut()), KL_ERR_NULL);
+        let mut n = 2usize;
+        assert_eq!(kl_ack_chunk(3, null_mut(), &mut n), KL_ERR_NULL);
+        // not an ACK: still OK, outputs cleared
+        let (mut is_ack, mut got) = (9u8, 9u8);
+        let not_acks: [&[u8]; 4] = [&[0b100, 1, 0], &[1, 1], &[], &[0b100]];
+        for c in not_acks {
+            let p = if c.is_empty() { null() } else { c.as_ptr() };
+            assert_eq!(kl_parse_ack(p, c.len(), &mut is_ack, &mut got), KL_OK);
+            assert_eq!((is_ack, got), (0, 0));
+            is_ack = 9;
+            got = 9;
+        }
+        assert_eq!(kl_parse_ack(null(), 2, &mut is_ack, &mut got), KL_ERR_NULL);
+        let a = [4u8, 0];
+        assert_eq!(
+            kl_parse_ack(a.as_ptr(), 2, null_mut(), &mut got),
+            KL_ERR_NULL
+        );
+        assert_eq!(
+            kl_parse_ack(a.as_ptr(), 2, &mut is_ack, null_mut()),
+            KL_ERR_NULL
+        );
+        // an ACK chunk fed to the reassembler is an error, which is why callers filter first
+        let h = new_reasm();
+        assert_eq!(push(h, &[0b100, 0]).0, KL_ERR_MALFORMED);
+        kl_reassembler_free(h);
+    }
+}
+
+#[test]
+fn frame_constants_match_core() {
+    use areatm_kagilink_core::ble_frame as bf;
+    assert_eq!(bf::MTYPE_HANDSHAKE, MT_HS);
+    assert_eq!(bf::MTYPE_CHANNEL, MT_CH);
+    assert_eq!(bf::MAX_BLE_MESSAGE, 512);
+    assert_eq!(bf::MIN_CHUNK, 6);
+    assert_eq!(bf::MAX_CHUNK, 512);
 }

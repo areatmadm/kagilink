@@ -1,5 +1,5 @@
 /*
- * KagiLink C ABI (hand-written to match core/kagilink-ffi exactly; ABI version 1).
+ * KagiLink C ABI (hand-written to match core/kagilink-ffi exactly; ABI version 2).
  * Apache-2.0. Synthetic-data use only until independent review (D012/D014/D016).
  *
  * Conventions
@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define KL_ABI_VERSION 1u
+#define KL_ABI_VERSION 2u
 
 /* Stable numeric values. 1..17 map one-to-one from the core Error enum. */
 typedef enum kl_status_t {
@@ -67,6 +67,14 @@ typedef enum kl_status_t {
 typedef struct kl_receiver_t kl_receiver_t;
 typedef struct kl_sender_t kl_sender_t;
 typedef struct kl_channel_t kl_channel_t;
+typedef struct kl_reassembler_t kl_reassembler_t;
+
+/* BLE chunk codec constants (docs/BLE_GATT_SPEC.md section 5). */
+#define KL_MTYPE_HANDSHAKE 1
+#define KL_MTYPE_CHANNEL 2
+#define KL_FRAME_MAX_MESSAGE 512
+#define KL_FRAME_MIN_CHUNK 6
+#define KL_FRAME_MAX_CHUNK 512
 
 /* Returns KL_ABI_VERSION. Bindings must refuse to run on mismatch. */
 uint32_t kl_abi_version(void);
@@ -159,6 +167,49 @@ kl_status_t kl_channel_close(kl_channel_t* c);
 uint8_t kl_channel_is_closed(kl_channel_t* c);
 
 void kl_channel_free(kl_channel_t* c);
+
+/* ---- BLE chunk codec (ABI v2; pure, stateless except the reassembler) ---- */
+
+/* Split one BLE message (1..512 bytes, mtype KL_MTYPE_*) into chunks of at most max_chunk bytes
+ * (KL_FRAME_MIN_CHUNK..KL_FRAME_MAX_CHUNK; use min(ATT MTU - 3, 244)). `out` receives repeated
+ * [uint32 big-endian length][chunk bytes]; *out_count receives the chunk count. Nothing is
+ * consumed on any error; KL_ERR_BUFFER reports the required size. KL_ERR_LIMITS for a bad
+ * mtype, length or chunk size. */
+kl_status_t kl_frame_chunk(uint8_t mtype, const uint8_t* msg, size_t msg_len, size_t max_chunk,
+                           uint8_t* out, size_t* out_len, size_t* out_count);
+
+/* New strict in-order reassembler for ONE direction of ONE connection. On failure *out is NULL. */
+kl_status_t kl_reassembler_new(kl_reassembler_t** out);
+
+/* Feed one received chunk. ACK chunks must be filtered first with kl_parse_ack (they are an
+ * error here). *out_complete is 1 only when this chunk completed a message, which is then held
+ * in the handle until kl_reassembler_take; otherwise 0 (need more). Any codec error
+ * (KL_ERR_MALFORMED / FRAMING / LIMITS / UNSUPPORTED) is final: the reassembler is dead, later
+ * pushes return KL_ERR_CLOSED, and the host must drop the connection and discard the session.
+ * While a completed message is still held, push returns KL_ERR_WRONG_STATE and changes nothing. */
+kl_status_t kl_reassembler_push(kl_reassembler_t* h, const uint8_t* chunk, size_t chunk_len,
+                                uint8_t* out_complete);
+
+/* Copy the completed message out: *out_mtype gets the message type, out the data (*out_len is
+ * capacity in, length out). Too small: KL_ERR_BUFFER with the required size, message stays
+ * held. On success the held copy is erased. Nothing held: KL_ERR_WRONG_STATE. The data is a
+ * handshake message or AEAD fragment; wipe the host copy when done. */
+kl_status_t kl_reassembler_take(kl_reassembler_t* h, uint8_t* out_mtype, uint8_t* out,
+                                size_t* out_len);
+
+/* 1 if dead (a codec error occurred), NULL, busy or unusable; 0 otherwise. */
+uint8_t kl_reassembler_is_dead(kl_reassembler_t* h);
+
+void kl_reassembler_free(kl_reassembler_t* h);
+
+/* Write the 2-byte application ACK chunk for `seq` (used only for Notify, D026). *out_len is
+ * capacity in, 2 out. */
+kl_status_t kl_ack_chunk(uint8_t seq, uint8_t* out, size_t* out_len);
+
+/* Classify a received chunk. *out_is_ack is 1 and *out_seq the acknowledged number only when the
+ * chunk is exactly an ACK chunk; otherwise both are 0 and the status is still KL_OK. */
+kl_status_t kl_parse_ack(const uint8_t* chunk, size_t chunk_len, uint8_t* out_is_ack,
+                         uint8_t* out_seq);
 
 #ifdef __cplusplus
 }

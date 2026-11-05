@@ -8,7 +8,7 @@ package com.areatm.kagilink.spike
  * length on return; a null output array with outLen[0] = 0 is a size query.
  */
 object Native {
-    const val EXPECTED_ABI = 1
+    const val EXPECTED_ABI = 2
 
     const val KIND_CONTROL = 1
     const val KIND_SECRET = 2

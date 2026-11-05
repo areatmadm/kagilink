@@ -8,6 +8,8 @@
 //! * output buffers are written only on success;
 //! * every export null-checks, bounds-checks input lengths, is wrapped in `catch_unwind`
 //!   and uses `try_lock` (`KL_ERR_BUSY`);
+//! * ABI v2 adds the BLE chunk codec (`kl_frame_*`, `kl_reassembler_*`, `kl_ack_*`); it is
+//!   pure and carries opaque bytes, with the same buffer and handle conventions;
 //! * no logging, no callbacks, no global state, no secret text in any return value.
 //!
 //! Synthetic data only until an independent review of this `unsafe` code exists.
@@ -17,6 +19,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::too_many_arguments)]
 
+use areatm_kagilink_core::ble_frame::{self, Reassembler};
 use areatm_kagilink_core::transport::{
     Message, SecureChannel, MAX_FRAGMENTS, MAX_FRAGMENT_PAYLOAD, MAX_MESSAGE,
 };
@@ -27,7 +30,7 @@ use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use zeroize::Zeroize;
 
 /// ABI version returned by [`kl_abi_version`]. Bumped on any signature change.
-pub const KL_ABI_VERSION: u32 = 1;
+pub const KL_ABI_VERSION: u32 = 2;
 
 /// Upper bound accepted for any single input length (sanity check, bytes).
 const MAX_IN: usize = 1 << 20;
@@ -138,6 +141,17 @@ struct ChannelState {
 /// Opaque channel handle (wraps `SecureChannel`).
 pub struct kl_channel_t {
     inner: Mutex<ChannelState>,
+}
+
+struct ReassemblerState {
+    r: Reassembler,
+    /// A completed message waiting for `kl_reassembler_take`.
+    held: Option<(u8, Vec<u8>)>,
+}
+
+/// Opaque BLE chunk reassembler handle (wraps `ble_frame::Reassembler`).
+pub struct kl_reassembler_t {
+    inner: Mutex<ReassemblerState>,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -264,7 +278,7 @@ const M4_LEN: usize = 1 + TAG_LEN;
 // General
 // ---------------------------------------------------------------------------------------
 
-/// Returns the ABI version (currently 1). Hosts must refuse to run on mismatch.
+/// Returns the ABI version (currently 2). Hosts must refuse to run on mismatch.
 #[no_mangle]
 pub extern "C" fn kl_abi_version() -> u32 {
     KL_ABI_VERSION
@@ -759,4 +773,228 @@ pub unsafe extern "C" fn kl_channel_free(c: *mut kl_channel_t) {
             drop(unsafe { Box::from_raw(c) });
         }
     }));
+}
+
+// ---------------------------------------------------------------------------------------
+// BLE chunk codec (docs/BLE_GATT_SPEC.md section 5). Pure, no secret state of its own; the
+// messages it carries are handshake messages or AEAD fragments.
+// ---------------------------------------------------------------------------------------
+
+/// Split one BLE message into chunks of at most `max_chunk` bytes (6..=512). `out` receives
+/// repeated `[u32 big-endian length][chunk]`; `*out_count` receives the chunk count. Nothing is
+/// consumed on any error (the codec is stateless); `KL_ERR_BUFFER` reports the required size.
+///
+/// # Safety
+/// `msg` valid for `msg_len` bytes (or NULL with 0); `out`, `out_len`, `out_count` per convention.
+#[no_mangle]
+pub unsafe extern "C" fn kl_frame_chunk(
+    mtype: u8,
+    msg: *const u8,
+    msg_len: usize,
+    max_chunk: usize,
+    out: *mut u8,
+    out_len: *mut usize,
+    out_count: *mut usize,
+) -> kl_status_t {
+    run(|| {
+        // SAFETY: pointers validated by the helpers.
+        let m = unsafe { in_slice(msg, msg_len)? };
+        if out_count.is_null() || out_len.is_null() {
+            return Err(KL_ERR_NULL);
+        }
+        let chunks = ble_frame::chunk_message(mtype, m, max_chunk)?;
+        let total: usize = chunks.iter().map(|c| LEN_PREFIX + c.len()).sum();
+        // SAFETY: out_len validated non-null; buffer checked against `total`.
+        let ob = unsafe { OutBuf::prep(out, out_len, total)? };
+        let mut packed = Vec::with_capacity(total);
+        for c in &chunks {
+            let l = u32::try_from(c.len()).map_err(|_| KL_ERR_LIMITS)?;
+            packed.extend_from_slice(&l.to_be_bytes());
+            packed.extend_from_slice(c);
+        }
+        // SAFETY: ob validated with capacity >= total == packed.len().
+        unsafe { ob.put(&packed)? };
+        // SAFETY: out_count validated non-null above, caller-writable.
+        unsafe { *out_count = chunks.len() };
+        Ok(())
+    })
+}
+
+/// Create a reassembler waiting for a FIRST chunk. On failure `*out` is NULL.
+///
+/// # Safety
+/// `out` must be NULL or writable.
+#[no_mangle]
+pub unsafe extern "C" fn kl_reassembler_new(out: *mut *mut kl_reassembler_t) -> kl_status_t {
+    run(|| {
+        // SAFETY: `out` validated inside.
+        unsafe { clear_slot(out)? };
+        let b = Box::new(kl_reassembler_t {
+            inner: Mutex::new(ReassemblerState {
+                r: Reassembler::new(),
+                held: None,
+            }),
+        });
+        // SAFETY: `out` was validated non-null and writable above.
+        unsafe { *out = Box::into_raw(b) };
+        Ok(())
+    })
+}
+
+/// Feed one received chunk (an ACK chunk is rejected: filter with `kl_parse_ack` first).
+/// `*out_complete` is 1 only when this chunk completed a message, which is then held inside the
+/// handle until `kl_reassembler_take`; otherwise 0 (need more). Any codec error is final: the
+/// reassembler is dead and later pushes return `KL_ERR_CLOSED`. While a completed message is
+/// still held, push returns `KL_ERR_WRONG_STATE` and changes nothing.
+///
+/// # Safety
+/// `h` live handle or NULL; `chunk` valid for `chunk_len` bytes (or NULL with 0);
+/// `out_complete` writable.
+#[no_mangle]
+pub unsafe extern "C" fn kl_reassembler_push(
+    h: *mut kl_reassembler_t,
+    chunk: *const u8,
+    chunk_len: usize,
+    out_complete: *mut u8,
+) -> kl_status_t {
+    run(|| {
+        // SAFETY: pointers validated by the helpers.
+        let h = unsafe { handle(h)? };
+        let chunk = unsafe { in_slice(chunk, chunk_len)? };
+        if out_complete.is_null() {
+            return Err(KL_ERR_NULL);
+        }
+        // SAFETY: out_complete validated non-null.
+        unsafe { *out_complete = 0 };
+        let mut g = lock(&h.inner)?;
+        if g.held.is_some() {
+            return Err(KL_ERR_WRONG_STATE);
+        }
+        if let Some(m) = g.r.push(chunk)? {
+            g.held = Some(m);
+            // SAFETY: out_complete validated non-null above.
+            unsafe { *out_complete = 1 };
+        }
+        Ok(())
+    })
+}
+
+/// Copy the completed message out: `*out_mtype` receives the message type and `out` the data
+/// (`*out_len` = capacity in, length out). Too small returns `KL_ERR_BUFFER` with the required
+/// size and keeps the message held. On success the held copy is erased. With nothing held it
+/// returns `KL_ERR_WRONG_STATE`.
+///
+/// # Safety
+/// `h` live handle or NULL; `out_mtype` writable; `out`, `out_len` per convention.
+#[no_mangle]
+pub unsafe extern "C" fn kl_reassembler_take(
+    h: *mut kl_reassembler_t,
+    out_mtype: *mut u8,
+    out: *mut u8,
+    out_len: *mut usize,
+) -> kl_status_t {
+    run(|| {
+        // SAFETY: pointers validated by the helpers.
+        let h = unsafe { handle(h)? };
+        if out_mtype.is_null() {
+            return Err(KL_ERR_NULL);
+        }
+        let mut g = lock(&h.inner)?;
+        let need = g.held.as_ref().ok_or(KL_ERR_WRONG_STATE)?.1.len();
+        // SAFETY: out_len validated inside; the held message is kept on BUFFER/NULL errors.
+        let ob = unsafe { OutBuf::prep(out, out_len, need)? };
+        let (t, mut data) = g.held.take().ok_or(KL_ERR_WRONG_STATE)?;
+        // SAFETY: ob validated with capacity >= data.len().
+        let r = unsafe { ob.put(&data) };
+        data.zeroize();
+        r?;
+        // SAFETY: out_mtype validated non-null above.
+        unsafe { *out_mtype = t };
+        Ok(())
+    })
+}
+
+/// 1 if the reassembler is dead (a codec error occurred), NULL, busy or unusable; 0 otherwise.
+///
+/// # Safety
+/// `h` live handle or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn kl_reassembler_is_dead(h: *mut kl_reassembler_t) -> u8 {
+    catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: validated by `handle`.
+        let Ok(h) = (unsafe { handle(h) }) else {
+            return 1;
+        };
+        match lock(&h.inner) {
+            Ok(g) => u8::from(g.r.is_dead()),
+            Err(_) => 1,
+        }
+    }))
+    .unwrap_or(1)
+}
+
+/// Free a reassembler handle (any held message is erased). NULL is a no-op.
+///
+/// # Safety
+/// `h` NULL or a handle from `kl_reassembler_new` not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn kl_reassembler_free(h: *mut kl_reassembler_t) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if !h.is_null() {
+            // SAFETY: created by Box::into_raw in kl_reassembler_new; freed once (caller contract).
+            let b = unsafe { Box::from_raw(h) };
+            if let Ok(mut g) = b.inner.lock() {
+                if let Some((_, d)) = g.held.as_mut() {
+                    d.zeroize();
+                }
+            }
+            drop(b);
+        }
+    }));
+}
+
+/// Write the 2-byte application ACK chunk for `seq` (`*out_len` = capacity in, 2 out).
+///
+/// # Safety
+/// `out`, `out_len` per convention.
+#[no_mangle]
+pub unsafe extern "C" fn kl_ack_chunk(seq: u8, out: *mut u8, out_len: *mut usize) -> kl_status_t {
+    run(|| {
+        // SAFETY: pointers validated by prep.
+        let ob = unsafe { OutBuf::prep(out, out_len, 2)? };
+        // SAFETY: ob validated with capacity >= 2.
+        unsafe { ob.put(&ble_frame::ack_chunk(seq)) }
+    })
+}
+
+/// Classify a received chunk: `*out_is_ack` is 1 and `*out_seq` the acknowledged sequence number
+/// only when the chunk is exactly an ACK chunk; otherwise both are 0 and the status is still
+/// `KL_OK` (not an ACK is not an error: pass the chunk to the reassembler).
+///
+/// # Safety
+/// `chunk` valid for `chunk_len` bytes (or NULL with 0); `out_is_ack`, `out_seq` writable.
+#[no_mangle]
+pub unsafe extern "C" fn kl_parse_ack(
+    chunk: *const u8,
+    chunk_len: usize,
+    out_is_ack: *mut u8,
+    out_seq: *mut u8,
+) -> kl_status_t {
+    run(|| {
+        // SAFETY: pointers validated by the helpers.
+        let c = unsafe { in_slice(chunk, chunk_len)? };
+        if out_is_ack.is_null() || out_seq.is_null() {
+            return Err(KL_ERR_NULL);
+        }
+        let (is_ack, seq) = match ble_frame::parse_ack(c) {
+            Some(s) => (1, s),
+            None => (0, 0),
+        };
+        // SAFETY: both pointers validated non-null above.
+        unsafe {
+            *out_is_ack = is_ack;
+            *out_seq = seq;
+        }
+        Ok(())
+    })
 }

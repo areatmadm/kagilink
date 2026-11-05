@@ -29,6 +29,34 @@ fuzz_target!(|data: &[u8]| {
     // or points to a live buffer of at least the stated length; handles come from the library
     // and are freed exactly once at the end.
     unsafe {
+        // BLE chunk codec (ABI v2): arbitrary chunks, messages, chunk sizes and capacities.
+        let mut re: *mut kl_reassembler_t = null_mut();
+        ok(kl_reassembler_new(&mut re));
+        assert!(!re.is_null());
+        let mut complete = 0u8;
+        for part in rest.chunks(23) {
+            ok(kl_reassembler_push(re, part.as_ptr(), part.len(), &mut complete));
+            if complete == 1 {
+                let (mut t, mut mbuf, mut mlen) = (0u8, vec![0u8; 600], cap.min(600));
+                ok(kl_reassembler_take(re, &mut t, mbuf.as_mut_ptr(), &mut mlen));
+            }
+        }
+        let _ = kl_reassembler_is_dead(re);
+        kl_reassembler_free(re);
+        let mut packed = vec![0u8; 8192];
+        let mut packed_len = cap.max(1).min(packed.len());
+        let mut chunk_count = 0usize;
+        let max_chunk = rest.first().map_or(20, |b| usize::from(*b) * 2);
+        ok(kl_frame_chunk(
+            sel & 3, rest.as_ptr(), rest.len(), max_chunk,
+            packed.as_mut_ptr(), &mut packed_len, &mut chunk_count,
+        ));
+        let (mut is_ack, mut ack_seq) = (0u8, 0u8);
+        ok(kl_parse_ack(rest.as_ptr(), rest.len(), &mut is_ack, &mut ack_seq));
+        let mut ack = [0u8; 2];
+        let mut ack_len = ack.len();
+        ok(kl_ack_chunk(sel, ack.as_mut_ptr(), &mut ack_len));
+
         let mut rx: *mut kl_receiver_t = null_mut();
         ok(kl_receiver_new(b"rx".as_ptr(), 2, null(), 0, &mut rx));
         assert!(!rx.is_null());

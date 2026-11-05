@@ -171,5 +171,5 @@ list on the receiver and user selection, replaces "exactly one advertiser"; (3) 
 only for attempts that already sent M3; (4) crowded places are in scope.
 
 Still open: (a) a real measurement that Windows receives the tag in both forms and merges scan responses; (b) per-attempt address rotation (not controllable on Android, so not relied on); (c) platform implementations of this framing through the
-shared Rust codec over the C ABI (not started); (d) whether the receiver should rate-limit new
+shared Rust codec over the C ABI (the C ABI v2 export exists, D027, tested with synthetic data; no platform uses it yet); (d) whether the receiver should rate-limit new
 connections while several look-alike advertisers keep appearing.

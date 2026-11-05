@@ -558,3 +558,16 @@ channel, small buffers. Still NOT verified: BLE transport, Keystore/Secure Encla
 | CLI `ble-receive`: risk notice, code shown first, active scan, user picks a row, connect, one attempt | COMPILES ONLY, NOT RUN |
 
 Workspace: 150 tests pass, clippy `-D warnings` clean. The fake phone proves driver and framing logic, not real BLE behaviour (MTU, indication delivery, scan-response merging all remain unmeasured). Real-secret transfer stays disabled (D012).
+
+### BLE chunk codec through the C ABI, ABI v2 (D027, 2026-11-06)
+
+| Item | State |
+|---|---|
+| New exports: `kl_frame_chunk`, `kl_reassembler_new/push/take/is_dead/free`, `kl_ack_chunk`, `kl_parse_ack`; header, C++ RAII wrapper (`frame_chunk`, `Reassembler`, `ack_chunk`, `parse_ack`) and `KL_ABI_VERSION` 2 updated; Android spike `EXPECTED_ABI` set to 2 | implemented |
+| `cargo fmt --all`, `cargo clippy --workspace --all-targets --offline -- -D warnings` | clean |
+| `cargo test --workspace --offline` and `--release` | PASS (FFI integration tests 15, was 8: round trip for chunk sizes 20..244 plus 6 and 512 over 13 message lengths, duplicate/gap/reorder, reserved and ACK bits, oversize declared length and oversize chunk, empty and header-only chunks, unknown mtype, missing LAST, dead-for-good, NULL and tiny-buffer and size-query cases, held-message BUFFER behaviour, ACK round trip, constants equal to core) |
+| `tests/cpp/run-cpp-consumer.ps1` (MSVC /W4 /WX, C++20) | PASS: 653 checks, 0 failures |
+| `tests/c/consumer.c` | compiled and run locally with MSVC `/W4 /WX /std:c11` only (extra check): 8944 checks, 0 failures. The project gcc `-Wall -Wextra -Wpedantic -Werror` build and the gcc AddressSanitizer/UBSan run, and `tools/check-ffi-exports.sh` (needs `nm`), did NOT run locally; they run in CI only. The header-vs-`lib.rs` export lists were compared by regex locally: identical, 26 functions |
+| Fuzz target `ffi_calls` extended with the codec calls | type-checks (`cargo check` on the fuzz crate); NOT fuzzed (needs the pinned nightly and cargo-fuzz in CI) |
+| Swift binding, Android JNI shim | NOT updated or rebuilt: they do not wrap the new functions yet; the Swift package reads the header ABI constant, the Android spike constant was bumped, neither re-run on a device |
+| Real BLE use of the codec API | NOT tested; independent review of the new `unsafe` still outstanding |
