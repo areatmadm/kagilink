@@ -12,9 +12,9 @@ repository = "https://github.com/areatmadm/kagilink"
 homepage = "https://key.minori.in"
 
 # Release hardening (docs/FFI_DESIGN.md): abort on panic so no unwinding crosses the C ABI, keep
-# overflow checks on in release, and build one codegen unit for reproducibility.
+# overflow checks on in release, and build one codegen unit for reproducibility. No LTO: thin LTO broke
+# `cargo build --release` on macOS arm64 with rustc 1.92.0 and zeroize 1.9.1 (zeroize_derive not found).
 [profile.release]
 panic = "abort"
 overflow-checks = true
 codegen-units = 1
-lto = "thin"
