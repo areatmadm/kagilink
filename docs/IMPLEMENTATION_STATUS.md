@@ -83,13 +83,27 @@ handshake by the main session) and integrated here.
 | cargo clippy --workspace --all-targets -- -D warnings | PASS |
 | cargo test --workspace (debug) | PASS: 29 transport unit tests, 38 handshake tests, 7 CPace draft vectors, 11 Phase 0 model tests |
 | Two handshake tests initially failed because of test bugs (flipped a suite byte instead of a sid byte; used the wrong receiver's code); fixed in the tests, no implementation change | recorded for transparency |
-| Fuzzing, cargo audit/deny, constant-time/side-channel review, memory-dump review, independent audit | NOT RUN |
+| Coverage-guided fuzzing, constant-time/side-channel review, memory-dump review, independent audit | NOT RUN (see hardening addendum below for what was run) |
 | Cross-language vectors, FFI, BLE mapping, hardware key use, real-secret transfer | NOT DONE; real-secret transfer remains disabled |
 
 Known limits: `SecureChannel::new` and the key schedule copy 32-byte keys by value, so
 transient stack copies are not tracked; `Aes256Gcm` is rebuilt per operation. Errors
 The error `AttemptInProgress` is defined but the handshake counts an abandoned attempt as a plain
 failure. Phase 0 exit criterion 3 stays open.
+
+### Phase 1 hardening addendum — 2026-11-05 (D017)
+
+| Check | Actual outcome |
+|---|---|
+| cargo audit (RustSec db, 1403 advisories, 47 crates in Cargo.lock) | PASS: exit 0, no vulnerabilities or warnings reported |
+| cargo deny check (deny.toml: advisories, bans, licenses, sources) | PASS (advisories ok, bans ok, licenses ok, sources ok) |
+| tests/mutation.rs (10 deterministic fixed-seed mutation tests, 300 rounds each) | PASS: mutated M1/M2/M3/M4 and transport fragments never completed a handshake or released a message; decoders never panicked and only accepted canonical encodings; random bytes never panicked |
+| FFI boundary | DESIGN ONLY: docs/FFI_DESIGN.md, D016 (proposed); no code, owner approval pending |
+
+The mutation tests are NOT coverage-guided fuzzing and give no coverage claim; cargo-fuzz
+needs a nightly toolchain that is not installed. cargo audit/deny check known advisories and
+licenses only; they are not a code audit. One test bug was fixed while writing them (the
+fragment size could exceed the 256-fragment limit); no implementation change.
 
 ## Next gates and limitations
 

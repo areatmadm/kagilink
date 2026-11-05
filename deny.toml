@@ -1,0 +1,27 @@
+# cargo-deny policy for KagiLink (D017). Local check: cargo deny check
+[graph]
+all-features = false
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
+
+[licenses]
+version = 2
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
