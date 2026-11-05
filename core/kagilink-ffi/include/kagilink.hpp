@@ -76,6 +76,9 @@ Status with_buffer(std::vector<std::uint8_t>& out, F&& f) {
 struct ReceiverDel { void operator()(kl_receiver_t* p) const noexcept { kl_receiver_free(p); } };
 struct SenderDel { void operator()(kl_sender_t* p) const noexcept { kl_sender_free(p); } };
 struct ChannelDel { void operator()(kl_channel_t* p) const noexcept { kl_channel_free(p); } };
+struct ReassemblerDel {
+    void operator()(kl_reassembler_t* p) const noexcept { kl_reassembler_free(p); }
+};
 
 inline const std::uint8_t* ptr(std::span<const std::uint8_t> s) {
     return s.empty() ? nullptr : s.data();
@@ -222,6 +225,82 @@ public:
 
 private:
     std::unique_ptr<kl_sender_t, detail::SenderDel> h_;
+};
+
+// ---- BLE chunk codec (ABI v2) ----
+
+// Split one BLE message into chunks of at most `max_chunk` bytes; each chunk is one element.
+inline Status frame_chunk(std::uint8_t mtype, std::span<const std::uint8_t> msg,
+                          std::size_t max_chunk,
+                          std::vector<std::vector<std::uint8_t>>& chunks) {
+    chunks.clear();
+    std::vector<std::uint8_t> packed;
+    std::size_t count = 0;
+    const Status st = detail::with_buffer(packed, [&](std::uint8_t* out, std::size_t* len) {
+        return kl_frame_chunk(mtype, detail::ptr(msg), msg.size(), max_chunk, out, len, &count);
+    });
+    if (st != KL_OK) return st;
+    std::size_t off = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (off + 4 > packed.size()) return KL_ERR_MALFORMED;
+        const std::size_t n = (std::size_t{packed[off]} << 24) | (std::size_t{packed[off + 1]} << 16) |
+                              (std::size_t{packed[off + 2]} << 8) | std::size_t{packed[off + 3]};
+        off += 4;
+        if (off + n > packed.size()) return KL_ERR_MALFORMED;
+        chunks.emplace_back(packed.begin() + static_cast<std::ptrdiff_t>(off),
+                            packed.begin() + static_cast<std::ptrdiff_t>(off + n));
+        off += n;
+    }
+    return KL_OK;
+}
+
+// The 2-byte application ACK chunk for `seq` (Notify mode only, D026).
+inline Status ack_chunk(std::uint8_t seq, std::vector<std::uint8_t>& out) {
+    return detail::with_buffer(out, [&](std::uint8_t* o, std::size_t* len) {
+        return kl_ack_chunk(seq, o, len);
+    });
+}
+
+// Classify a received chunk. Not an ACK is not an error (`is_ack` false, Status Ok).
+inline Status parse_ack(std::span<const std::uint8_t> chunk, bool& is_ack, std::uint8_t& seq) {
+    std::uint8_t a = 0, s = 0;
+    const Status st = kl_parse_ack(detail::ptr(chunk), chunk.size(), &a, &s);
+    is_ack = st == KL_OK && a != 0;
+    seq = st == KL_OK ? s : 0;
+    return st;
+}
+
+// Strict in-order reassembler for one direction of one connection. Any error is final:
+// drop the connection and the session.
+class Reassembler {
+public:
+    static Status create(Reassembler& out) {
+        kl_reassembler_t* raw = nullptr;
+        const Status st = kl_reassembler_new(&raw);
+        if (st == KL_OK) out.h_.reset(raw);
+        return st;
+    }
+    explicit operator bool() const { return static_cast<bool>(h_); }
+    bool is_dead() const { return kl_reassembler_is_dead(h_.get()) != 0; }
+
+    // Feed one chunk. When it completes a message, `complete` is true and `mtype` / `message`
+    // are filled (the message is wiped when the SecretBytes goes out of scope).
+    Status push(std::span<const std::uint8_t> chunk, std::uint8_t& mtype, SecretBytes& message,
+                bool& complete) {
+        message.wipe();
+        complete = false;
+        std::uint8_t done = 0;
+        const Status st = kl_reassembler_push(h_.get(), detail::ptr(chunk), chunk.size(), &done);
+        if (st != KL_OK || done == 0) return st;
+        const Status tk = detail::with_buffer(message.vec(), [&](std::uint8_t* out, std::size_t* len) {
+            return kl_reassembler_take(h_.get(), &mtype, out, len);
+        });
+        complete = tk == KL_OK;
+        return tk;
+    }
+
+private:
+    std::unique_ptr<kl_reassembler_t, detail::ReassemblerDel> h_;
 };
 
 }  // namespace kagilink

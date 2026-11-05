@@ -29,6 +29,8 @@ Opaque pointers, created and freed only through the library:
 | `kl_sender_t*` | `SenderPending` | `kl_sender_start` | consumed by `kl_sender_finish`, or `kl_sender_free` |
 | `kl_channel_t*` | `SecureChannel` | `kl_receiver_finish` / `kl_sender_finish` | `kl_channel_free` |
 
+| `kl_reassembler_t*` | `ble_frame::Reassembler` + one held message | `kl_reassembler_new` | `kl_reassembler_free` |
+
 - `*_free` zeroizes (the Rust types already erase on drop), is idempotent for NULL, and a
   freed handle must not be reused. `kl_sender_finish` consumes the sender handle even on
   failure, mirroring `handle_m3(self, ..)`.
@@ -83,6 +85,36 @@ Opaque pointers, created and freed only through the library:
   exact match, no negotiation).
 - Any signature or struct change bumps the ABI version. Structs are avoided; the surface is
   functions plus opaque handles and byte buffers.
+- History: v1 = handshake and secure channel (18 exports); v2 (D027, 2026-11-06) adds
+  the BLE chunk codec. Adding functions also bumps the version so a v1 host refuses a v2 library
+  and the reverse. Places that record the number: `KL_ABI_VERSION` in `lib.rs` and `kagilink.h`,
+  `EXPECTED_ABI` in `apps/android/ffi-spike/src/Native.kt`, the `abi_version_is_two` test; the
+  C, C++ and Swift consumers compare against the header constant.
+
+## BLE chunk codec (ABI v2, D027)
+
+Exposes `kagilink-core::ble_frame` (docs/BLE_GATT_SPEC.md section 5) so no platform re-implements
+it. The codec is pure and carries opaque bytes; it adds no cryptography and trusts nothing the radio
+delivers.
+
+| Function | Purpose |
+|---|---|
+| `kl_frame_chunk(mtype, msg, len, max_chunk, out, out_len, out_count)` | split one message into chunks (6..=512 bytes each); `out` = repeated `[u32 BE length][chunk]`, `out_count` = chunks; stateless, BUFFER reports the required size |
+| `kl_reassembler_new/free` | opaque strict in-order reassembler for one direction of one connection |
+| `kl_reassembler_push(h, chunk, len, out_complete)` | OK with `*out_complete` 0 = need more, 1 = message complete and held; error = reassembler dead for good (later pushes return `KL_ERR_CLOSED`) |
+| `kl_reassembler_take(h, out_mtype, out, out_len)` | copy the held message (type and data) out; BUFFER keeps it held, success erases the held copy; nothing held = `KL_ERR_WRONG_STATE` |
+| `kl_reassembler_is_dead(h)` | 1 once a codec error happened (also for NULL/busy) |
+| `kl_ack_chunk(seq, out, out_len)` / `kl_parse_ack(chunk, len, out_is_ack, out_seq)` | D026 Notify ACKs; "not an ACK" is `KL_OK` with `*out_is_ack` = 0, so hosts filter ACKs before the reassembler (which rejects them) |
+
+Design choices: one length-prefixed buffer instead of an index getter (the same shape as
+`kl_channel_seal`, one call, no per-index state); a completed message stays inside the handle until
+taken so a too-small buffer never loses it; `push` while a message is held returns
+`KL_ERR_WRONG_STATE` and changes nothing; an error from `in_slice` or a NULL argument (before the codec
+sees the chunk) does not kill the reassembler, but hosts should treat every non-OK push as "drop the
+connection". Error mapping is the core one: Malformed (reserved/ACK bits, short or over-512 chunk),
+Framing (duplicate, gap, reorder, bad first chunk, LAST/length mismatch), Limits (declared length 0 or
+above 512), Unsupported (unknown message type), Closed (after an error). Test evidence is listed in
+IMPLEMENTATION_STATUS.md; real BLE use of this API is not tested.
 
 ## Per-platform binding sketch
 
