@@ -240,6 +240,31 @@ private fun testNullAndBuffers() {
     check(Native.channelIsClosed(0L) == 1, "NULL channel reads as closed")
 }
 
+/** Registry-token handles (library PR #30): stale, double-freed and garbage values fail closed. */
+private fun testHandleLifecycle() {
+    val h = LongArray(1)
+    check(Native.receiverNew(RX_ID, CLAIMS, h) == Native.OK, "receiver new (lifecycle)")
+    val r = h[0]
+    Native.receiverFree(r)
+    val buf = ByteArray(6)
+    check(Native.receiverCode(r, buf, longArrayOf(6)) == Native.ERR_NULL, "use after free -> KL_ERR_NULL")
+    Native.receiverFree(r) // double free through the raw binding: must not crash
+    check(Native.receiverCode(r, buf, longArrayOf(6)) == Native.ERR_NULL, "still KL_ERR_NULL after double free")
+    check(Native.receiverCode(0x7f12345678L, buf, longArrayOf(6)) == Native.ERR_NULL, "garbage handle value -> KL_ERR_NULL")
+    check(Native.channelIsClosed(r) == 1, "stale handle reads as closed")
+    // NativeHandle: a second close and close of an emptied handle never call free again.
+    check(Native.receiverNew(RX_ID, CLAIMS, h) == Native.OK, "receiver new (NativeHandle)")
+    var frees = 0
+    val nh = NativeHandle(h[0]) { v -> frees++; Native.receiverFree(v) }
+    check(nh.isOpen && nh.get() == h[0], "NativeHandle open")
+    nh.close(); nh.close()
+    check(frees == 1 && !nh.isOpen && nh.get() == 0L, "NativeHandle double close frees exactly once")
+    check(Native.receiverCode(h[0], buf, longArrayOf(6)) == Native.ERR_NULL, "NativeHandle target is gone")
+    val zero = NativeHandle(0L) { frees++ }
+    zero.close()
+    check(frees == 1, "NativeHandle(0) close does not call free")
+}
+
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         System.err.println("usage: SpikeMain <absolute path of libkagilink_jni.so>")
@@ -255,6 +280,7 @@ fun main(args: Array<String>) {
     testWrongCode()
     testTamperClosesChannel()
     testNullAndBuffers()
+    testHandleLifecycle()
     codecCrossCheck(::check)
     println("Kotlin/JNI consumer: $checks checks, $failures failures")
     exitProcess(if (failures == 0) 0 else 1)
