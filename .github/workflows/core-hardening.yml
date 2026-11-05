@@ -51,3 +51,26 @@ jobs:
         run: |
           rustup toolchain install 1.92.0 --profile minimal --target aarch64-linux-android
           cargo +1.92.0 build -p areatm-kagilink-core --release --locked --target aarch64-linux-android
+  c-consumer:
+    # A real C program using only include/kagilink.h and the static library (D016).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Build the FFI static library
+        run: |
+          rustup toolchain install 1.92.0 --profile minimal
+          cargo +1.92.0 build -p areatm-kagilink-ffi --release --locked
+      - name: Compile and run the C consumer (strict warnings)
+        run: |
+          gcc -std=c11 -Wall -Wextra -Wpedantic -Werror -Icore/kagilink-ffi/include \
+            tests/c/consumer.c target/release/libareatm_kagilink_ffi.a \
+            -lpthread -ldl -lm -o consumer
+          ./consumer
+      - name: Same program with AddressSanitizer and UBSan on the C side
+        run: |
+          gcc -std=c11 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Icore/kagilink-ffi/include tests/c/consumer.c \
+            target/release/libareatm_kagilink_ffi.a -lpthread -ldl -lm -o consumer-asan
+          ./consumer-asan
