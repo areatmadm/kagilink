@@ -244,6 +244,6 @@ exit codes are identical: `gh` present, authenticated login exactly `areatmadm`,
 `areatmadm/kagilink-ai-memory` private, owned by areatmadm and pullable (exact, case-sensitive,
 JSON boolean true). Any failure prints only the generic denial and exits 1. Verified on
 Windows (Git Bash): allowed with the real login; denied with no `gh` on PATH; denied with an
-invalid token. NOT verified: on macOS itself, and the wrong-account case. The ps1 remains the
+invalid token. Also verified on macOS by the macOS session (2026-11-05, exit 0 per its private record; not independently re-run by the lead session). NOT verified: the wrong-account case. The ps1 remains the
 reference; `tests/security/test-ai-memory-gate.ps1` does not cover the sh script yet. Docker
 was rejected: it would require passing credentials into a container.
