@@ -97,8 +97,34 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("ble-ping") => {
+            #[cfg(windows)]
+            {
+                let seconds = args
+                    .iter()
+                    .position(|a| a == "--seconds")
+                    .and_then(|i| args.get(i + 1))
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(10)
+                    .clamp(1, 60);
+                println!("Phase 0 BLE diagnostic (fixed public strings, no secret). Scanning {seconds} s ...");
+                let outcome = areatm_kagilink_receiver::ble::ping_diagnostic(seconds);
+                println!("Result: {outcome:?}");
+                match outcome {
+                    areatm_kagilink_receiver::ble::BleOutcome::ExchangeOk => ExitCode::SUCCESS,
+                    _ => ExitCode::from(1),
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                println!("ble-ping is Windows only.");
+                ExitCode::from(64)
+            }
+        }
         _ => {
-            println!("usage: kagilink-receiver check | loopback [--accept]");
+            println!(
+                "usage: kagilink-receiver check | loopback [--accept] | ble-ping [--seconds N]"
+            );
             println!("Skeleton only: no BLE, no text entry, synthetic data only.");
             ExitCode::from(64)
         }

@@ -13,6 +13,9 @@ use areatm_kagilink_core::{
 };
 use std::sync::Arc;
 
+#[cfg(windows)]
+pub mod ble;
+
 pub use areatm_tpm_probe::{assess, Assessment, Attestation, TpmState};
 
 /// Result of applying the D024 policy to what the TPM stack reported.

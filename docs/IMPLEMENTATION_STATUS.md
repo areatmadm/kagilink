@@ -198,6 +198,22 @@ aarch64 qemu job, within the limits above. The iOS simulator was deliberately no
 | Block and RAM-only decisions on a real PC | NOT RUN (covered only by unit tests; the lead PC has a working TPM) |
 | BLE, text entry into a target window, phone-side verification, vault, installer/portable packaging | NOT DONE |
 
+### Rust BLE central and own-window input probes addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `receiver` BLE module (WinRT through the `windows` crate, safe Rust; implements the Phase 0 fixed PING/PONG contract; scan, exactly-one-sender rule, write with response, exact reply check; prints no addresses or names) | Builds, clippy clean. Run on the lead PC (Realtek BLE adapter, central role supported): scanned 8 s, RESULT NoSender because no phone was advertising. No exchange has been observed, so the Rust BLE path is NOT yet verified against a real peripheral |
+| `input-probe` (own-window synthetic Unicode input, opt-in `--send-to-own-window`, sends only if its own window is foreground, reads the text back from its own edit box) | Builds, clippy clean. First run without a user click: INCONCLUSIVE, nothing sent (Windows does not let a background program take the foreground; no workaround is attempted). Changed to wait up to 20 s for the user's click; a run with the click is still PENDING |
+| Input into other windows, elevated windows, CredUI, secure desktop, Remote Desktop | NOT TESTED and out of the allowed scope of these probes |
+
+Desk research on input constraints (public search 2026-11-05; community reports are not official
+guidance): SendInput is subject to UIPI and is silently dropped when the target runs at a higher
+integrity level, and its return value does not say why; Unicode packets (KEYEVENTF_UNICODE, VK_PACKET)
+are reported by community posts to be lost in some Remote Desktop and console scenarios while scan-code
+input sometimes works; no Microsoft statement about SendInput into an mstsc session was found. Together
+this means RDP and credential-dialog input must stay unsupported (AGENTS.md) until evidence from a real
+Remote Desktop target exists.
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;

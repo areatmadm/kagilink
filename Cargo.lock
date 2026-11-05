@@ -50,6 +50,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "areatm-input-probe"
+version = "0.0.0"
+dependencies = [
+ "windows",
+]
+
+[[package]]
 name = "areatm-kagilink-core"
 version = "0.0.0"
 dependencies = [
@@ -80,6 +87,7 @@ version = "0.0.0"
 dependencies = [
  "areatm-kagilink-core",
  "areatm-tpm-probe",
+ "windows",
 ]
 
 [[package]]

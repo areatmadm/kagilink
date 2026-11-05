@@ -12,3 +12,13 @@ description = "KagiLink Windows receiver skeleton in Rust (D022/D024): trust pol
 [dependencies]
 areatm-kagilink-core = { path = "../../../../core/kagilink-core" }
 areatm-tpm-probe = { path = "../tpm-probe" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = [
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_Advertisement",
+    "Devices_Bluetooth_GenericAttributeProfile",
+    "Foundation",
+    "Foundation_Collections",
+    "Storage_Streams",
+] }
