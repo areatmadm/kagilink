@@ -527,3 +527,21 @@ This is Phase 0 diagnostic UI. Android/Apple SDK compilation, real-device exchan
 hardware key operations, production security-core selection and native product UI
 remain incomplete. No release/signing/store/server action is authorized by this
 diagnostic implementation.
+
+### D021 binding spikes: Swift (macOS/iOS) and Kotlin/JNI (Android), reported 2026-11-06
+
+Both spikes call the shared C ABI (`kagilink.h`) from the native language and port the
+`tests/c/consumer.c` scenarios. Results are as REPORTED by the platform sessions; the lead
+session has checked the PR file lists and CI state but has not rerun the device tests.
+Neither PR is merged (merge is the owner's decision).
+
+| Spike | PR | Reported result | Notes / limits |
+|---|---|---|---|
+| Android Kotlin/JNI (`apps/android/ffi-spike`) | #5 | Galaxy S24 (SM-S921N, Android 16): 78 checks, 0 failures, exit 0; library exports only 18 JNI symbols | Run via `app_process` from /data/local/tmp, no app install. NULL-pointer-with-nonzero-length cases cannot occur from Kotlin (array becomes (NULL,0)); replaced by NULL output handle, zero handle and size-query checks, so 78 is not 1:1 with the 75 C checks. `panic=abort` not applied (catch_unwind fallback only). StrongBox, Keystore, BLE NOT verified. |
+| Apple Swift (`apps/apple/KagiLinkCore`) | #6 | macOS `swift test`: 8 scenarios pass; iPhone 15 Pro: same 8 scenarios, 50 checks pass; 7 existing contract tests pass | On device it ran in a scratch app shell with an XCTest shim, not real XCTest (package tests need a host app on device). iOS simulator not run (owner decision). Built with `panic=abort`, so the KL_ERR_PANIC path is unreachable and untested. `kl_status_t` imports as UInt32 in Swift; the wrapper converts to Int32. Signing: existing AreaTM team, existing Apple Development certificate and existing wildcard profile; no new certificate, device registration or upload. |
+
+Common finding: no ABI or header problem found by either binding. Scenarios covered on both: handshake,
+fragmented SECRET round trip, approval consumption, wrong code, D026 failure counting (Swift: five
+pre-M3 errors cost no budget, three post-M3 failures then TOO_MANY_FAILURES), tamper closes the
+channel, small buffers. Still NOT verified: BLE transport, Keystore/Secure Enclave key use,
+`panic=abort` on Android, real XCTest on device, review of the FFI `unsafe`.
