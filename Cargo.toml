@@ -10,3 +10,11 @@ license = "Apache-2.0"
 publish = false
 repository = "https://github.com/areatmadm/kagilink"
 homepage = "https://key.minori.in"
+
+# Release hardening (docs/FFI_DESIGN.md): abort on panic so no unwinding crosses the C ABI, keep
+# overflow checks on in release, and build one codegen unit for reproducibility.
+[profile.release]
+panic = "abort"
+overflow-checks = true
+codegen-units = 1
+lto = "thin"
