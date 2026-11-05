@@ -46,12 +46,19 @@ Crowded places (internet cafes, libraries) are in scope (D026): several unrelate
 running KagiLink, may be in radio range. The design must therefore let the USER pick the right phone and
 must not let strangers cheaply burn the receiver's failure budget.
 
-* The sender advertises the 128-bit service UUID and, in the scan response, a Complete Local Name
-  `KL-XXXX`, where XXXX is a short TAG: four random characters from the 31-symbol alphabet
-  `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (no look-alike characters), drawn fresh from the OS CSPRNG each
-  time the user presses start. The tag is NOT derived from the code, the device, the account or time,
-  and is never reused, so it cannot be used to guess the code and gives no tracking beyond one
-  60 s window. The same tag is shown large on the phone screen. No other advertising data.
+* The sender advertises the 128-bit service UUID and carries a short TAG `XXXX`: four random
+  characters from the 31-symbol alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (no look-alike
+  characters), drawn fresh from the OS CSPRNG each time the user presses start. The tag is NOT derived
+  from the code, the device, the account or time, and is never reused, so it cannot be used to guess the
+  code and gives no tracking beyond one 60 s window. The same tag is shown large on the phone screen.
+* The tag travels in ONE of two forms, because the platforms differ (Android review, 2026-11-06):
+  (a) Complete Local Name `KL-XXXX` in the advertisement or scan response (iOS peripherals can only
+  advertise a local name and service UUIDs; Android cannot set an arbitrary local name without
+  changing the device's Bluetooth name, so it must not use this form); (b) Service Data keyed by the
+  KL-V1 service UUID whose 4 bytes are the ASCII tag (Android; it fits: flags 3 B + 128-bit UUID 18 B in
+  the advertisement, 31 B available in the scan response). The receiver reads BOTH forms. If both are
+  present they must agree, otherwise the entry is shown as unusable. An advertiser with neither form is
+  listed as "unknown tag" and cannot be selected. No other advertising data is sent.
 * Advertising starts on explicit user action after code entry, stops after 60 s monotonic, or at once
   when a central connects. At most one connection is accepted; further attempts are refused.
 * The receiver scans (at most 10 s, extendable by the user) for the service UUID and shows a list of
@@ -69,9 +76,11 @@ must not let strangers cheaply burn the receiver's failure budget.
   is three (D014).
 * A disconnect at any time ends the session on both sides. Reconnecting always starts a fresh session
   (fresh code, fresh keys, fresh tag); nothing resumes.
-* Platform note (unverified): the local name in the scan response is expected to work on iOS (app in
-  the foreground), Android and Windows; if a platform hides it, the tag must be carried another way
-  and this section changes.
+* Platform notes (unverified on devices): Windows can read both `LocalName` and `DataSections` from a
+  received advertisement, but whether the scan response is merged into the same event needs a real
+  measurement. iOS must be in the foreground to advertise its local name. Android's advertising address
+  is a resolvable private address that the system rotates on its own schedule (about every 15 minutes,
+  not per attempt), so an address is NEVER an identifier here; only the per-start tag is.
 
 ## 4. Application messages carried
 
@@ -142,12 +151,13 @@ Windows `GattSession` behaviour; bonded-device interference.
 
 ## 9. Resolved and open questions
 
+Android review (2026-11-06, from API knowledge, no device test): local name is not usable on Android, so the tag may also travel as Service Data; Indicate with confirm=true and the onNotificationSent callback are available, with the next send only after that callback; MTU exchange is started by the central; default ATT MTU 23, Android maximum 517; no long (prepared) writes are needed because chunks fit in MTU-3.
+
 Resolved by the owner (2026-11-06, D026): (1) Notify with a per-chunk application ACK is allowed where
-Indicate is unavailable; (2) a random per-start display tag in the scan response, with a signal-sorted
+Indicate is unavailable; (2) a random per-start display tag (local name or service data, section 3), with a signal-sorted
 list on the receiver and user selection, replaces "exactly one advertiser"; (3) failures are counted
 only for attempts that already sent M3; (4) crowded places are in scope.
 
-Still open: (a) whether the platforms can carry the tag in the scan response as assumed; (b) address
-rotation per attempt (platform dependent); (c) platform implementations of this framing through the
+Still open: (a) a real measurement that Windows receives the tag in both forms and merges scan responses; (b) per-attempt address rotation (not controllable on Android, so not relied on); (c) platform implementations of this framing through the
 shared Rust codec over the C ABI (not started); (d) whether the receiver should rate-limit new
 connections while several look-alike advertisers keep appearing.

@@ -537,3 +537,13 @@ Consequences:
 * Residual availability attacks stay possible and are accepted: a nearby device can hold the sender's
   single connection slot, copy a visible tag, or complete M2 repeatedly to spend the three failures. They
   do not leak the code or a secret. A rate limit on new connections is an open question.
+
+
+### D026 refinement after the Android review, 2026-11-06
+
+Android cannot advertise an arbitrary local name (it can only advertise the device's Bluetooth name),
+while iOS peripherals can advertise only a local name and service UUIDs. The tag therefore may travel as
+Complete Local Name `KL-XXXX` or as 4-byte Service Data under the service UUID; the receiver reads both
+and requires them to agree when both are present. Owner decisions are unchanged (random per-start tag,
+signal-sorted list, user selection). Address rotation cannot be relied on, which the design already
+assumed. Platform behaviour is still unmeasured.
