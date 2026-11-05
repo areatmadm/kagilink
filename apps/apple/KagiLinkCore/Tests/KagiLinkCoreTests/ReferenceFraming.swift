@@ -1,5 +1,5 @@
-// BLE chunk framing v1 (docs/BLE_GATT_SPEC.md section 5), ported from core/kagilink-core/src/ble_frame.rs.
-// The C ABI does not expose the codec, so the spike implements it here. Opaque bytes only.
+// Independent Swift reference of the BLE chunk framing (docs/BLE_GATT_SPEC.md section 5), kept ONLY to
+// cross-validate the shared Rust codec (kl_frame_*). It was the spike's own implementation before ABI v2.
 
 enum FrameError: Error { case limits, malformed }
 

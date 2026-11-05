@@ -131,3 +131,58 @@ public final class Sender {
         return (m4, Channel(ch))
     }
 }
+
+/// BLE chunk codec (docs/BLE_GATT_SPEC.md section 5) through the shared Rust implementation.
+public enum Codec {
+    public static let mtypeHandshake = Native.mtypeHandshake
+    public static let mtypeChannel = Native.mtypeChannel
+
+    /// Splits one message into chunks of at most `maxChunk` bytes (use min(ATT MTU - 3, 244)).
+    public static func chunk(mtype: UInt8, message: [UInt8], maxChunk: Int) throws -> [[UInt8]] {
+        let (st, chunks) = Native.frameChunk(mtype: mtype, message: message, maxChunk: maxChunk)
+        try check(st)
+        return chunks
+    }
+
+    public static func ackChunk(seq: UInt8) throws -> [UInt8] {
+        let (st, bytes) = Native.ackChunk(seq)
+        try check(st)
+        return bytes
+    }
+
+    /// The acknowledged sequence number if `chunk` is exactly an ACK chunk, else nil.
+    /// Filter ACKs with this before feeding chunks to a FrameReassembler (it rejects them).
+    public static func parseAck(_ chunk: [UInt8]) throws -> UInt8? {
+        let (st, seq) = Native.parseAck(chunk)
+        try check(st)
+        return seq
+    }
+}
+
+/// Strict in-order reassembler for ONE direction of ONE connection. Any error is final: drop the
+/// connection and discard the session. The returned data is handshake or AEAD material; wipe it.
+public final class FrameReassembler {
+    private var handle: OpaquePointer?
+
+    public init() throws {
+        try KagiLink.requireMatchingABI()
+        let (st, h) = Native.reassemblerNew()
+        try check(st)
+        handle = h
+    }
+
+    deinit { Native.reassemblerFree(handle) }
+
+    public var isDead: Bool { handle.map(Native.reassemblerIsDead) ?? true }
+
+    /// Feeds one chunk; returns the message when this chunk completed it.
+    public func push(_ chunk: [UInt8]) throws -> (mtype: UInt8, data: [UInt8])? {
+        guard let h = handle else { throw KagiLinkError(status: .null) }
+        let (st, complete) = Native.reassemblerPush(h, chunk)
+        try check(st)
+        guard complete else { return nil }
+        let (tst, mtype, data) = Native.reassemblerTake(h)
+        try check(tst)
+        return (mtype, data)
+    }
+}

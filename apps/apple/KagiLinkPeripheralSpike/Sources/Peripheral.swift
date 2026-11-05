@@ -1,4 +1,4 @@
-// KL-V1 peripheral spike (D021 follow-up): advertises, answers the receiver's M1..M4 handshake and
+// KL-V1 peripheral spike (D021 follow-up): chunk framing now comes from the shared Rust codec (ABI v2). Advertises, answers the receiver's M1..M4 handshake and
 // sends one synthetic SECRET through the shared Rust core. Synthetic data only. Measures MTU,
 // subscribe/queue behaviour and foreground/background advertising. No pairing, no Keychain.
 import CoreBluetooth
@@ -20,7 +20,7 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
     private var manager: CBPeripheralManager!
     private var tx: CBMutableCharacteristic?
     private var central: CBCentral?
-    private var reassembler = Framing.Reassembler()
+    private var reassembler: FrameReassembler?
     private var sender: Sender?
     private var channel: Channel?
     private var code: [UInt8] = []
@@ -89,7 +89,7 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
     }
 
     private func reset() {
-        reassembler = Framing.Reassembler()
+        reassembler = try? FrameReassembler()
         sender = nil; channel = nil; outbound = []; central = nil
         updateFalse = 0; readyCalls = 0; chunkSize = 20
     }
@@ -128,7 +128,8 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         for r in requests where r.characteristic.uuid == rxUUID {
             guard let v = r.value else { failed = true; continue }
             do {
-                if let m = try reassembler.push([UInt8](v)) { try onMessage(m.mtype, m.data) }
+                guard let ra = reassembler else { throw KagiLinkError(status: .null) }
+                if let m = try ra.push([UInt8](v)) { try onMessage(m.mtype, m.data) }
             } catch { note("protocol error: \(error)"); failed = true }
         }
         p.respond(to: first, withResult: failed ? .unlikelyError : .success) // one response covers the batch
@@ -142,38 +143,38 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
     private func onMessage(_ mtype: UInt8, _ data: [UInt8]) throws {
         note("message type=\(mtype) len=\(data.count) phase=\(phase)")
         switch (phase, mtype) {
-        case (1, Framing.mtypeHandshake):
+        case (1, Codec.mtypeHandshake):
             let s = try Sender(code: code, m1: data, deviceID: Array("ios-spike".utf8),
                                purpose: Array("synthetic-login".utf8), claims: Array("mode=spike".utf8))
             Native.wipe(&code) // the code is only needed for M2
             sender = s
-            try send(Framing.mtypeHandshake, s.m2)
+            try send(Codec.mtypeHandshake, s.m2)
             phase = 2
-        case (2, Framing.mtypeHandshake):
-            guard let s = sender else { throw FrameError.malformed }
+        case (2, Codec.mtypeHandshake):
+            guard let s = sender else { throw KagiLinkError(status: .malformed) }
             let (m4, ch) = try s.finish(m3: data)
             channel = ch
             sender = nil
-            try send(Framing.mtypeHandshake, m4)
+            try send(Codec.mtypeHandshake, m4)
             try ch.approveOneTransfer() // spike: the Start tap is the single synthetic approval
             for f in try ch.seal(.secret, plaintext: syntheticSecret, maxFragmentPayload: 200) {
-                try send(Framing.mtypeChannel, f)
+                try send(Codec.mtypeChannel, f)
             }
             phase = 3
-        case (3, Framing.mtypeChannel):
-            guard let ch = channel else { throw FrameError.malformed }
+        case (3, Codec.mtypeChannel):
+            guard let ch = channel else { throw KagiLinkError(status: .malformed) }
             if let (kind, plain) = try ch.open(fragment: data) {
                 note("RESULT-side message kind=\(kind) len=\(plain.count) (content not logged)")
                 plain.wipe()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.stop("exchange complete") }
             }
         default:
-            throw FrameError.malformed
+            throw KagiLinkError(status: .malformed)
         }
     }
 
     private func send(_ mtype: UInt8, _ message: [UInt8]) throws {
-        outbound.append(contentsOf: try Framing.chunk(mtype: mtype, message: message, maxChunk: chunkSize))
+        outbound.append(contentsOf: try Codec.chunk(mtype: mtype, message: message, maxChunk: chunkSize))
         pump()
     }
 
