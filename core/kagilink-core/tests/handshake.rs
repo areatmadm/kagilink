@@ -844,3 +844,41 @@ fn receiver_sessions_get_fresh_codes() {
     }
     assert!(distinct);
 }
+
+#[test]
+fn expiry_with_an_open_attempt_after_m3_keeps_its_failure_in_the_count() {
+    // Field case (Android fault run 2026-11-06): the displayed budget fell from 2/3 to 1/3 when the code
+    // expired while an attempt abandoned after M3 was still open.
+    let (c, clk) = clock();
+    let (mut rx, _pending, _m3) = through_m3(&clk);
+    assert_eq!(rx.failures(), 0);
+    assert_eq!(rx.failures_including_open(), 1);
+    c.advance(CODE_TTL_MS);
+    let mut rng = os_rng();
+    let e = err_of(rx.begin_attempt(&mut rng));
+    assert!(matches!(e, Error::Expired | Error::NotActive), "got {e:?}");
+    assert_eq!(
+        rx.failures(),
+        1,
+        "the open attempt after M3 must stay counted"
+    );
+    assert_eq!(
+        rx.failures_including_open(),
+        1,
+        "the displayed count must not go down"
+    );
+}
+
+#[test]
+fn expiry_with_an_open_attempt_before_m3_adds_nothing() {
+    let (c, clk) = clock();
+    let (mut rx, _m2, _pending) = {
+        let (rx, m2, pending) = through_m2(&clk);
+        (rx, m2, pending)
+    };
+    assert_eq!(rx.failures_including_open(), 0);
+    c.advance(CODE_TTL_MS);
+    let mut rng = os_rng();
+    let _ = rx.begin_attempt(&mut rng);
+    assert_eq!(rx.failures(), 0);
+}

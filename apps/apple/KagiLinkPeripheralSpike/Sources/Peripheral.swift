@@ -74,6 +74,9 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         guard !running, manager.state == .poweredOn, codeDigits.utf8.count == 6,
               codeDigits.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else { note("start refused (state/code)"); return }
         code = Array(codeDigits.utf8)
+#if FAULT_INJECTION
+        logSessionStart()
+#endif
         reset()
         tag = randomTag()
         let rx = CBMutableCharacteristic(type: rxUUID, properties: [.write], value: nil, permissions: [.writeable])
@@ -90,6 +93,15 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         note("FAULT MODE = \(fault.rawValue) (test build, synthetic data)")
 #endif
     }
+
+#if FAULT_INJECTION
+    /// Test builds only: UTC start time (whole seconds) so a phone log line can be matched with the PC's attempt start
+    /// time. Nothing derived from the code is logged, not even a hash prefix.
+    private func logSessionStart() {
+        let stamp = ISO8601DateFormatter().string(from: Date()) // UTC, e.g. 2026-11-06T05:12:33Z
+        note("FAULT SESSION start=\(stamp)")
+    }
+#endif
 
     func stop(_ why: String) {
         manager.stopAdvertising()

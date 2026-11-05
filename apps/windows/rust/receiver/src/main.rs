@@ -79,6 +79,40 @@ fn acknowledged_gate(args: &[String]) -> Result<TransferGate, ExitCode> {
     }
 }
 
+/// Current UTC time as `YYYY-MM-DD HH:MM:SS UTC` (no time zone database needed). Printed so a tester can match
+/// PC output with a phone log by time; it carries no secret.
+#[cfg_attr(not(windows), allow(dead_code))] // only the Windows-only `ble-receive` uses it
+fn utc_stamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format_utc(secs)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))] // only the Windows-only `ble-receive` uses it
+fn format_utc(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // Civil-from-days (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02} UTC",
+        rem / 3_600,
+        (rem % 3_600) / 60,
+        rem % 60
+    )
+}
+
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|a| a == flag)
@@ -186,6 +220,7 @@ fn ble_receive(args: &[String]) -> ExitCode {
     };
     let code = rx.code().map(str::to_owned).unwrap_or_default();
     println!("Code (valid 60 s): {code}");
+    println!("Code created: {}", utc_stamp());
     println!("Enter it on the phone, press start, and note the KL-XXXX tag the phone shows.");
     let seconds = flag_value(args, "--seconds")
         .and_then(|v| v.parse::<u64>().ok())
@@ -247,6 +282,7 @@ fn ble_receive(args: &[String]) -> ExitCode {
                 return ExitCode::from(1);
             }
         };
+        println!("Attempt started: {}", utc_stamp());
         let result = run_attempt(&mut link, &mut rx, &mut rng);
         println!(
             "Failure budget used: {}/{} (an attempt abandoned after M3 is included)",
@@ -437,5 +473,18 @@ fn main() -> ExitCode {
             println!("Skeleton only: no BLE, no text entry, synthetic data only.");
             ExitCode::from(64)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_utc;
+
+    #[test]
+    fn utc_formatting_matches_known_instants() {
+        assert_eq!(format_utc(0), "1970-01-01 00:00:00 UTC");
+        assert_eq!(format_utc(1_700_000_000), "2023-11-14 22:13:20 UTC");
+        assert_eq!(format_utc(951_782_400), "2000-02-29 00:00:00 UTC");
+        assert_eq!(format_utc(1_793_923_200), "2026-11-06 00:00:00 UTC");
     }
 }
