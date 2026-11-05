@@ -121,5 +121,8 @@ fuzz_target!(|data: &[u8]| {
         ok(kl_channel_close(tx_ch));
         kl_channel_free(tx_ch);
         kl_channel_free(rx_ch);
+        // The handle shells of a finished handshake are still owned by the host.
+        kl_sender_free(sender);
+        kl_receiver_free(rx);
     }
 });
