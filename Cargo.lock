@@ -67,6 +67,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "areatm-kagilink-ffi"
+version = "0.0.0"
+dependencies = [
+ "areatm-kagilink-core",
+ "zeroize",
+]
+
+[[package]]
 name = "areatm-phase0-model"
 version = "0.0.0"
 

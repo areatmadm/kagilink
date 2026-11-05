@@ -105,6 +105,18 @@ needs a nightly toolchain that is not installed. cargo audit/deny check known ad
 licenses only; they are not a code audit. One test bug was fixed while writing them (the
 fragment size could exceed the 256-fragment limit); no implementation change.
 
+### D016 preconditions progress addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| CI fix: `cargo --offline` removed from phase0.yml (runs on main had been failing since the Phase 1 core landed because the runner could not download crates) | PASS on e1620cf and aef1dc7 |
+| `cargo check -p areatm-kagilink-core` for aarch64-linux-android, aarch64-apple-ios, aarch64-apple-ios-sim, aarch64-apple-darwin, run on Windows | PASS (type-check only: no linking, no tests, no Xcode/NDK) |
+| `cargo check -p areatm-kagilink-ffi` for aarch64-linux-android, aarch64-apple-ios, aarch64-apple-ios-sim, on Windows | PASS (type-check only) |
+| `.github/workflows/core-hardening.yml` on GitHub-hosted runners (aef1dc7): cargo audit + cargo deny; core tests under qemu-aarch64 (29 unit + 38 handshake + 10 mutation); core library build for aarch64-linux-android | PASS. The qemu run uses a normal Linux libc, so it is NOT Android verification; the Android job is compile-only |
+| core/kagilink-ffi: fmt, clippy -D warnings, workspace tests (9 FFI tests; total workspace 104 passing) on Windows x86_64 | PASS (run by the subagent and re-run by the lead) |
+| kagilink.h syntax check with MSVC `cl /W4 /Zs` | PASS (syntax only; no real C/C++ consumer linked) |
+| iOS simulator/device build and tests (macOS session), Android real-device adb run (Android session), coverage-guided fuzzing, FFI tests under qemu and on mobile targets | NOT RUN |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;

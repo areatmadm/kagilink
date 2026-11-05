@@ -320,3 +320,20 @@ Owner decisions (interview), implementing D016 precondition 1 within D019:
   acceleration paths). A pass in (b) alone must not be reported as Android-verified.
 - Windows (x86_64-pc-windows-msvc) already runs natively on the lead session's machine.
 - Nothing has been run for iOS or Android yet; no workflow files exist.
+
+
+### D016 progress, 2026-11-05
+
+Minimal `core/kagilink-ffi` (package `areatm-kagilink-ffi`, C ABI v1, hand-written
+`include/kagilink.h`) is implemented by a subagent and checked by the lead session. Deviations
+from FFI_DESIGN.md: (1) `kl_sender_finish` empties the pending state but the handle shell must
+still be released with `kl_sender_free`; a second finish returns WRONG_STATE. (2) If the caller
+buffer for `open_fragment` is too small, the completed message is held inside the channel and
+collected by a zero-length call with a bigger buffer; a non-empty fragment while one is held
+closes the channel. (3) `panic = "abort"` is not set: Cargo ignores profile settings in member
+crates, so it must be set at the workspace root or with `-C panic=abort` when packaging; until
+then `catch_unwind` is the only defence. (4) No `test-hooks` feature; TTL is covered by core
+ManualClock tests, not through the FFI. Not done: symbol visibility, CFI/hardening flags, CI check
+that test-hooks stays off, independent review of the `unsafe` code. D016 preconditions: 2 (minimal
+FFI crate) met for Windows x86_64 only; 1 (targets) partly (see status file); 3 (coverage-guided
+fuzzing) and a real C/C++ consumer test are open.
