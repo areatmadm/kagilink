@@ -23,9 +23,15 @@ mod probe {
     use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::Security::Cryptography::{
-        NCryptCreatePersistedKey, NCryptFinalizeKey, NCryptFreeObject, NCryptGetProperty,
-        NCryptOpenStorageProvider, BCRYPT_ECDSA_P256_ALGORITHM, MS_PLATFORM_CRYPTO_PROVIDER,
-        NCRYPT_FLAGS, NCRYPT_KEY_HANDLE, NCRYPT_PROV_HANDLE,
+        BCryptBuffer, BCryptBufferDesc, BCryptGenRandom, NCryptCreateClaim,
+        NCryptCreatePersistedKey, NCryptDeleteKey, NCryptFinalizeKey, NCryptFreeObject,
+        NCryptGetProperty, NCryptOpenStorageProvider, NCryptSetProperty, NCryptVerifyClaim,
+        BCRYPTGENRANDOM_FLAGS, BCRYPT_ECDSA_P256_ALGORITHM, BCRYPT_RSA_ALGORITHM, CERT_KEY_SPEC,
+        MS_PLATFORM_CRYPTO_PROVIDER, NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE,
+        NCRYPTBUFFER_TPM_PLATFORM_CLAIM_NONCE, NCRYPTBUFFER_TPM_PLATFORM_CLAIM_PCR_MASK,
+        NCRYPT_CLAIM_AUTHORITY_AND_SUBJECT, NCRYPT_CLAIM_PLATFORM, NCRYPT_FLAGS, NCRYPT_HANDLE,
+        NCRYPT_KEY_HANDLE, NCRYPT_PCP_IDENTITY_KEY, NCRYPT_PCP_KEY_USAGE_POLICY_PROPERTY,
+        NCRYPT_PROV_HANDLE,
     };
     use windows::Win32::Security::{
         GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
@@ -296,10 +302,253 @@ mod probe {
                     Err(e) => line(label, &format!("NOT READABLE ({e})")),
                 }
             }
+            attestation_checks(prov);
             let _ = NCryptFreeObject(windows::Win32::Security::Cryptography::NCRYPT_HANDLE(
                 prov.0,
             ));
         }
+    }
+
+    /// Owns a key handle; a named key is deleted from the key store on drop, an ephemeral key
+    /// is simply released. Either way nothing outlives the probe.
+    struct KeyGuard {
+        key: NCRYPT_KEY_HANDLE,
+        delete_named: bool,
+    }
+
+    impl Drop for KeyGuard {
+        fn drop(&mut self) {
+            if self.key.0 == 0 {
+                return;
+            }
+            // SAFETY: the handle was created by NCryptCreatePersistedKey and is released once.
+            unsafe {
+                if self.delete_named {
+                    // NCryptDeleteKey also frees the handle on success.
+                    if NCryptDeleteKey(self.key, 0).is_ok() {
+                        return;
+                    }
+                }
+                let _ = NCryptFreeObject(NCRYPT_HANDLE(self.key.0));
+            }
+        }
+    }
+
+    fn make_key(
+        prov: NCRYPT_PROV_HANDLE,
+        alg: PCWSTR,
+        name: PCWSTR,
+        identity: bool,
+    ) -> windows::core::Result<KeyGuard> {
+        // SAFETY: standard NCrypt key creation; the guard releases the handle on every path.
+        unsafe {
+            let mut key = NCRYPT_KEY_HANDLE::default();
+            NCryptCreatePersistedKey(prov, &mut key, alg, name, CERT_KEY_SPEC(0), NCRYPT_FLAGS(0))?;
+            let guard = KeyGuard {
+                key,
+                delete_named: !name.is_null(),
+            };
+            if identity {
+                NCryptSetProperty(
+                    NCRYPT_HANDLE(key.0),
+                    NCRYPT_PCP_KEY_USAGE_POLICY_PROPERTY,
+                    &NCRYPT_PCP_IDENTITY_KEY.to_le_bytes(),
+                    NCRYPT_FLAGS(0),
+                )?;
+            }
+            NCryptFinalizeKey(key, NCRYPT_FLAGS(0))?;
+            Ok(guard)
+        }
+    }
+
+    fn random_bytes<const N: usize>() -> [u8; N] {
+        let mut b = [0u8; N];
+        // SAFETY: system-preferred RNG, buffer valid for N bytes.
+        unsafe {
+            let _ = BCryptGenRandom(None, &mut b, BCRYPTGENRANDOM_FLAGS(2));
+        }
+        b
+    }
+
+    /// Key attestation and platform claim through the Platform Crypto Provider, as a normal user.
+    /// The attestation key (AIK) is NOT activated against an EK certificate, so even a produced claim
+    /// only shows "signed by some TPM-resident key"; the OS self-check below is not a remote proof.
+    fn attestation_checks(prov: NCRYPT_PROV_HANDLE) {
+        println!("-- attestation (claims; AIK not activated, nothing persisted) --");
+        let aik = match make_key(prov, BCRYPT_RSA_ALGORITHM, PCWSTR::null(), true) {
+            Ok(k) => {
+                line("Ephemeral identity key (AIK) as this user", "CREATED");
+                k
+            }
+            Err(e) => {
+                line(
+                    "Ephemeral identity key (AIK) as this user",
+                    &format!("FAILED ({e})"),
+                );
+                // Some TPM stacks only allow named identity keys. Try one with a random name that
+                // is deleted again by the guard.
+                let name: Vec<u16> = format!("kagilink-probe-{}\0", hex(&random_bytes::<6>()))
+                    .encode_utf16()
+                    .collect();
+                match make_key(prov, BCRYPT_RSA_ALGORITHM, PCWSTR(name.as_ptr()), true) {
+                    Ok(k) => {
+                        line("Named temporary AIK (deleted after test)", "CREATED");
+                        k
+                    }
+                    Err(e2) => {
+                        line(
+                            "Named temporary AIK (deleted after test)",
+                            &format!("FAILED ({e2})"),
+                        );
+                        return;
+                    }
+                }
+            }
+        };
+        let subject = match make_key(prov, BCRYPT_ECDSA_P256_ALGORITHM, PCWSTR::null(), false) {
+            Ok(k) => k,
+            Err(e) => {
+                line("Subject key for attestation", &format!("FAILED ({e})"));
+                return;
+            }
+        };
+
+        // Key attestation claim: the AIK vouches that `subject` lives in this TPM.
+        let mut nonce = random_bytes::<32>();
+        let mut buffers = [BCryptBuffer {
+            cbBuffer: nonce.len() as u32,
+            BufferType: NCRYPTBUFFER_CLAIM_KEYATTESTATION_NONCE,
+            pvBuffer: nonce.as_mut_ptr().cast(),
+        }];
+        let desc = BCryptBufferDesc {
+            ulVersion: 0,
+            cBuffers: 1,
+            pBuffers: buffers.as_mut_ptr(),
+        };
+        let mut blob = vec![0u8; 8192];
+        let mut got = 0u32;
+        // SAFETY: desc/buffers/nonce outlive the call; blob is valid for its stated length.
+        let made = unsafe {
+            NCryptCreateClaim(
+                Some(subject.key),
+                Some(aik.key),
+                NCRYPT_CLAIM_AUTHORITY_AND_SUBJECT,
+                Some(&desc),
+                Some(&mut blob),
+                &mut got,
+                0,
+            )
+        };
+        match made {
+            Ok(()) => {
+                blob.truncate(got as usize);
+                line(
+                    "Key attestation claim (AIK vouches for key)",
+                    &format!("CREATED {}", short(&blob)),
+                );
+                let mut out = BCryptBufferDesc::default();
+                // SAFETY: same buffers; the blob is the one just produced.
+                let verified = unsafe {
+                    NCryptVerifyClaim(
+                        subject.key,
+                        Some(aik.key),
+                        NCRYPT_CLAIM_AUTHORITY_AND_SUBJECT,
+                        Some(&desc),
+                        &blob,
+                        &mut out,
+                        0,
+                    )
+                };
+                match verified {
+                    Ok(()) => line(
+                        "OS self-check of that claim (same machine)",
+                        "OK (not a remote verifier's proof)",
+                    ),
+                    Err(e) => line(
+                        "OS self-check of that claim (same machine)",
+                        &format!("FAILED ({e})"),
+                    ),
+                }
+            }
+            Err(e) => line(
+                "Key attestation claim (AIK vouches for key)",
+                &format!("FAILED ({e})"),
+            ),
+        }
+
+        // Platform claim: TPM quote over selected PCRs plus the measured boot log. The accepted
+        // parameter layout is not obvious from the headers, so a few documented-looking variants
+        // are tried and every outcome is reported.
+        let variants: [(&str, u32, usize, usize); 5] = [
+            ("mask 4 bytes, nonce 32", NCRYPT_CLAIM_PLATFORM, 4, 32),
+            ("mask 4 bytes, nonce 20", NCRYPT_CLAIM_PLATFORM, 4, 20),
+            ("mask 4 bytes, no nonce", NCRYPT_CLAIM_PLATFORM, 4, 0),
+            ("mask 3 bytes, nonce 32", NCRYPT_CLAIM_PLATFORM, 3, 32),
+            (
+                "authority-only flag, mask 4, nonce 32",
+                NCRYPT_CLAIM_PLATFORM | 1,
+                4,
+                32,
+            ),
+        ];
+        let mut platform_ok = false;
+        for (label, claim_type, mask_len, nonce_len) in variants {
+            let mut mask = [0x81u8, 0, 0, 0]; // PCR 0 and PCR 7, little-endian bit mask
+            let mut quote_nonce = random_bytes::<32>();
+            let mut pbuf = vec![BCryptBuffer {
+                cbBuffer: mask_len as u32,
+                BufferType: NCRYPTBUFFER_TPM_PLATFORM_CLAIM_PCR_MASK,
+                pvBuffer: mask.as_mut_ptr().cast(),
+            }];
+            if nonce_len > 0 {
+                pbuf.push(BCryptBuffer {
+                    cbBuffer: nonce_len as u32,
+                    BufferType: NCRYPTBUFFER_TPM_PLATFORM_CLAIM_NONCE,
+                    pvBuffer: quote_nonce.as_mut_ptr().cast(),
+                });
+            }
+            let pdesc = BCryptBufferDesc {
+                ulVersion: 0,
+                cBuffers: pbuf.len() as u32,
+                pBuffers: pbuf.as_mut_ptr(),
+            };
+            let mut pblob = vec![0u8; 65536];
+            let mut pgot = 0u32;
+            // SAFETY: pdesc/pbuf/mask/quote_nonce outlive the call; pblob is valid for its length.
+            let pmade = unsafe {
+                NCryptCreateClaim(
+                    None,
+                    Some(aik.key),
+                    claim_type,
+                    Some(&pdesc),
+                    Some(&mut pblob),
+                    &mut pgot,
+                    0,
+                )
+            };
+            match pmade {
+                Ok(()) => {
+                    line(
+                        &format!("Platform claim [{label}]"),
+                        &format!("CREATED {}", short(&pblob[..pgot as usize])),
+                    );
+                    platform_ok = true;
+                    break;
+                }
+                Err(e) => line(
+                    &format!("Platform claim [{label}]"),
+                    &format!("FAILED ({e})"),
+                ),
+            }
+        }
+        if !platform_ok {
+            line(
+                "Platform claim (quote + boot log)",
+                "NOT PRODUCED with any tried layout",
+            );
+        }
+        drop(subject);
+        drop(aik);
     }
 
     pub fn run() {

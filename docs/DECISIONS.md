@@ -417,3 +417,21 @@ portable process, which is the property the PC bang scenario needs; (2) an offli
 the EK certificate chain cannot be assumed; (3) a policy that requires Secure Boot would reject this
 very PC; (4) key attestation / quote with an attestation key was NOT tested yet. One probe bug was found
 and fixed first: the TBS flag for TPM 2.0 is 0x4, not 0x2. This is one machine, not PC bang data.
+
+
+### D022 attestation step result on the developer PC, 2026-11-05
+
+The probe now also tries attestation as a NORMAL user through the Platform Crypto Provider. Results
+(claims, same single PC): an ephemeral identity key (AIK) could be created without administrator
+rights; the key-attestation claim (AIK vouching for a second TPM-resident key, 1703 bytes, magic
+KAST) was produced and passed the OS self-check on the same machine; the platform claim (TPM quote over
+PCR 0 and 7 plus the boot log, 1187 bytes, magic ALPT) was produced once the PCR mask was passed as 4
+bytes (a 3-byte mask failed with NTE_INVALID_PARAMETER). What this does and does not establish: the
+Windows stack lets an unprivileged process obtain TPM-signed claims, so the mechanism is feasible for a
+portable receiver. It does NOT yet give a phone any reason to trust the PC: the AIK was not activated
+against an EK certificate (this PC's EK certificate is not in NV), the claim blobs were not parsed, no
+phone-side verifier exists, offline verification of AMD firmware TPM roots is unresolved, and a quote
+only attests boot state (here with Secure Boot disabled), not that the running system is free of
+keyloggers. Next design questions for the owner: what the phone should require (hardware-bound key
+only, a particular boot state, or both), whether an online EK-certificate step is acceptable for a
+one-time enrolment, and whether to treat the check as a user-visible warning rather than a gate.

@@ -184,7 +184,8 @@ aarch64 qemu job, within the limits above. The iOS simulator was deliberately no
 |---|---|
 | `apps/windows/rust/tpm-probe` builds on Windows; non-Windows builds a stub; fmt, clippy -D warnings, workspace tests (104 passing), cargo deny and cargo audit with the new crate | PASS |
 | Run as a normal user on the lead PC | TPM 2.0 (AMD firmware TPM, hardware interface); Secure Boot disabled; TBS context, GetCapability, PCR read, ephemeral TPM P-256 key creation and EK public read all worked without administrator rights; EK certificate not available in NV (8-byte value) |
-| Key attestation or quote with an attestation key, offline verification on a phone, PC bang machines, other vendors' TPMs | NOT RUN / UNKNOWN |
+| Key attestation claim and platform claim (quote + boot log) through the Platform Crypto Provider as a normal user, on the lead PC | PASS (claims produced: key attestation 1703 bytes, platform claim 1187 bytes with a 4-byte PCR mask; OS self-check of the key claim OK). The AIK is not EK-activated; blobs not parsed |
+| Offline verification on a phone, EK-certificate chain for this AMD firmware TPM, PC bang machines, other vendors' TPMs | NOT RUN / UNKNOWN |
 
 ## Next gates and limitations
 
