@@ -366,3 +366,37 @@ secrets, UI changes, BLE, hardware-key use, store or release steps, Apple/Google
 Still open before any real-secret use (D012): independent review of the `unsafe` FFI code and of the
 exact locked dependencies, symbol visibility and hardening flags, `panic=abort` packaging, and
 fuzzing of the FFI functions.
+
+
+## D022 — Windows receiver in Rust; TPM trust study, 2026-11-05
+
+Owner decision (interview): the Windows receiver is written in Rust and uses `areatm-kagilink-core`
+directly, so Windows has no FFI boundary and no C++ memory-safety surface in the product path. This
+changes the AGENTS.md Windows line (was C++20/C++/WinRT). The existing C++ Phase 0 probe and GUI stay as
+research tools. The Rust receiver will use the official `windows` crate for WinRT BLE and Win32; its
+dependencies need the usual review (D012) before selection. Nothing is implemented yet.
+
+Owner goal: people who cannot buy passkey-style hardware should be able to move a password once,
+easily, including from internet cafe (PC bang) machines, and the receiver should check whether the PC
+can be trusted using the TPM. What can honestly be claimed, and what is unknown:
+
+- A TPM can prove that a key lives in a TPM and was created by that TPM (a quote or key attestation
+  signed over a fresh nonce from the phone), and can report boot measurements (PCRs, Secure Boot
+  state). It cannot prove that the running OS, a service, a keylogger, a screen capture tool or an
+  administrator tool on the PC is benign. Boot measurements need a known-good reference to mean
+  anything, and PC bang images are custom. The decrypted password still reaches the target field in
+  that PC's memory (AGENTS.md: compromised receivers can expose credentials).
+- Verifying a TPM statement offline needs the EK/AK certificate chain and trusted vendor roots held on
+  the phone; some vendors publish EK certificates only online, and revocation checking needs the
+  network. Whether this fits the offline-only policy is UNVERIFIED.
+- Mutual direction: Android key attestation and Apple App Attest could let the PC check the phone, but
+  Apple's attestation needs a one-time network step on the phone, which conflicts with strict offline
+  operation. UNVERIFIED how far each fits.
+- Whether a normal-user process can create a TPM-backed key and obtain attestation through the Windows
+  Platform Crypto Provider / TBS without administrator rights, and what PC bang management software
+  allows, are UNKNOWN. No PC bang TPM statistics were found (public search, 2026-11-05).
+
+Next step (feasibility, read-only, synthetic data): a small Rust Phase-0 style probe that reports TPM
+presence/version, whether a TPM-resident key can be created as a normal user, and whether attestation
+material is obtainable, run on the developer PC first and on volunteer PC bang machines only with the
+owner's decision. Trust results will be labelled as claims until verified, as already required.

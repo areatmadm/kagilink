@@ -4,7 +4,7 @@ API feasibility is distinct from hardware validation and shipped support.
 
 | Platform | Intended role / APIs | Current support |
 |---|---|---|
-| Windows | Central, C++20/C++/WinRT GATT, normal-user portable EXE | GUI/CLI built; visible inventory/start/stop/no-sender flows observed; real GATT exchange NOT RUN |
+| Windows | Central; receiver to be written in Rust (D022), Phase 0 probe is C++20/C++/WinRT; normal-user portable EXE | GUI/CLI built; visible inventory/start/stop/no-sender flows observed; real GATT exchange NOT RUN |
 | iOS/iPadOS | Foreground Peripheral, SwiftUI/Core Bluetooth/Keychain/SE | Diagnostic source; iOS/iPadOS 18+, build SDK 27.1 for iPhone Duo; build/device NOT RUN |
 | Android | Peripheral, Kotlin/BLE/StrongBox/biometric | Diagnostic source; Android 14/API 34+, compile SDK 37.2 and target 37; SDK build/device NOT RUN |
 | macOS | Sender Peripheral + receiver Central, SwiftUI/Core Bluetooth/SE | Diagnostic target source, Apple Silicon/macOS 14+; build/device NOT RUN |

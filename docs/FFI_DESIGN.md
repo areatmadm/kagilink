@@ -86,7 +86,7 @@ Opaque pointers, created and freed only through the library:
 
 ## Per-platform binding sketch
 
-- Windows: link the `staticlib` into the C++20 receiver; header consumed directly. Target
+- Windows: superseded by D022: the Windows receiver is written in Rust and links the core crate directly, so there is no FFI boundary on Windows (the C and C++ consumers stay as tests of the C ABI for other hosts). Target
   `x86_64-pc-windows-msvc` (and `aarch64` later).
 - iOS/iPadOS/macOS: `staticlib` per target (`aarch64-apple-ios`, `-ios-sim`, `-darwin`)
   packaged as an XCFramework; Swift calls the C header through a module map.
