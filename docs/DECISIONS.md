@@ -215,7 +215,7 @@ This governs coordination only. It does not change any security policy, scope, p
 or the need for explicit owner approval in AGENTS.md.
 
 
-## D016 — Core FFI boundary design (proposed), 2026-11-05
+## D016 — Core FFI boundary design (conditionally approved 2026-11-05)
 
 Proposal only, awaiting owner approval: one `core/kagilink-ffi` crate (the only place with
 `unsafe`) exposing a plain C ABI over opaque handles and caller-allocated buffers, header
@@ -247,3 +247,24 @@ Windows (Git Bash): allowed with the real login; denied with no `gh` on PATH; de
 invalid token. Also verified on macOS by the macOS session (2026-11-05, exit 0 per its private record; not independently re-run by the lead session). NOT verified: the wrong-account case. The ps1 remains the
 reference; `tests/security/test-ai-memory-gate.ps1` does not cover the sh script yet. Docker
 was rejected: it would require passing credentials into a container.
+
+
+### D016 owner decision, 2026-11-05 (interview)
+
+Conditionally approved. Decisions: plain C ABI (not UniFFI); the Windows (lead) session
+implements the FFI crate alone; other platform sessions bind it only after it is complete.
+Conditions that must be met before any platform session is told to start porting:
+
+1. Target build verification: the pinned dependencies (pakery, getrandom, etc.) build and pass
+   tests for iOS, Android and aarch64 targets.
+2. A minimal `core/kagilink-ffi` crate exists (handshake to channel over the C ABI) with tests.
+3. Coverage-guided fuzzing of parsers and framing has run (needs a nightly toolchain and
+   cargo-fuzz; not installed yet).
+4. GitHub Actions wired in using self-hosted runners only (owner does not want GitHub-hosted
+   runners for cost). The MacBook runner is the macOS runner, consistent with "macOS session only
+   runs CI/tests on the Mac". Risk to settle first: on a public repository a self-hosted runner
+   must not execute code from fork pull requests; restrict workflows to the owner's branches or
+   require approval, and keep secrets out of runner environments.
+
+Still open and not changed by this approval: independent review of the `unsafe` FFI code and
+of the exact locked dependencies, real-secret transfer stays disabled (D012).

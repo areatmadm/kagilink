@@ -1,8 +1,8 @@
-# KagiLink core FFI boundary design (proposed, not implemented)
+# KagiLink core FFI boundary design (conditionally approved, not implemented)
 
-Status: PROPOSED (D016). Nothing here is implemented or reviewed. The Windows (lead) session
+Status: CONDITIONALLY APPROVED by the owner on 2026-11-05 (D016: plain C ABI, Windows session implements, four preconditions listed in DECISIONS.md D016). Originally PROPOSED. Nothing here is implemented or reviewed. The Windows (lead) session
 owns it. Other platform sessions must not start FFI bindings, CPace ports or vector ports until
-the owner approves this design and the Windows session says so.
+the D016 preconditions are met and the Windows session says so.
 
 Goal: let Windows (C++), iOS/macOS (Swift) and Android (Kotlin/JNI) use the single Rust core
 (`core/kagilink-core`, D014) without re-implementing the handshake, and without widening the
