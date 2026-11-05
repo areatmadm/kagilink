@@ -1,0 +1,75 @@
+name: KagiLink release DRY RUN (no signing, no publishing, synthetic data only)
+# Phase 7 preparation. Manual trigger only. Read-only token, no secrets, no id-token,
+# no attestations, no Sigstore/Cosign, no GitHub Release, no external uploads.
+# Third-party actions pinned by commit SHA. See docs/RELEASE_DRYRUN.md.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-receiver:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        shell: pwsh
+        run: rustup toolchain install 1.92.0 --profile minimal
+      - name: Build 1 (release, locked)
+        shell: pwsh
+        run: |
+          $env:RUSTUP_TOOLCHAIN = '1.92.0'
+          cargo build --release --locked -p areatm-kagilink-receiver
+          New-Item -ItemType Directory -Force -Path dryrun | Out-Null
+          Copy-Item target/release/areatm-kagilink-receiver.exe dryrun/build1.exe
+      - name: Build 2 (clean rebuild, same path)
+        shell: pwsh
+        run: |
+          $env:RUSTUP_TOOLCHAIN = '1.92.0'
+          cargo clean
+          cargo build --release --locked -p areatm-kagilink-receiver
+          Copy-Item target/release/areatm-kagilink-receiver.exe dryrun/build2.exe
+      - name: SHA-256 and reproducibility report
+        shell: pwsh
+        run: |
+          $h1 = (Get-FileHash dryrun/build1.exe -Algorithm SHA256).Hash.ToLower()
+          $h2 = (Get-FileHash dryrun/build2.exe -Algorithm SHA256).Hash.ToLower()
+          Write-Host "build1 sha256: $h1"
+          Write-Host "build2 sha256: $h2"
+          if ($h1 -eq $h2) { Write-Host 'REPRODUCIBILITY: identical (same runner, same path)' }
+          else { Write-Host 'REPRODUCIBILITY: DIFFERENT (report only, not a failure)' }
+          Copy-Item dryrun/build1.exe dryrun/areatm-kagilink-receiver.exe
+          "$h1  areatm-kagilink-receiver.exe" | Out-File -Encoding ascii dryrun/SHA256SUMS.txt
+          Get-Content dryrun/SHA256SUMS.txt
+      - name: Keep unsigned dry-run output (workflow artifact only)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: dryrun-unsigned-receiver
+          path: |
+            dryrun/areatm-kagilink-receiver.exe
+            dryrun/SHA256SUMS.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.92.0 --profile minimal
+      - name: Install cargo-cyclonedx (exact version, locked)
+        run: cargo +1.92.0 install cargo-cyclonedx --version 0.5.9 --locked
+      - name: Generate CycloneDX JSON SBOM for the workspace
+        run: cargo +1.92.0 cyclonedx --format json --all
+      - name: Print component counts
+        run: |
+          found=0
+          for f in $(find . -name '*.cdx.json' -not -path './target/*' | sort); do
+            found=1
+            n=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1])).get('components', [])))" "$f")
+            echo "$f components=$n"
+          done
+          [ "$found" = 1 ] || { echo 'no SBOM files produced'; exit 1; }
