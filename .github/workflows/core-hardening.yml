@@ -1,0 +1,51 @@
+name: KagiLink core hardening checks (synthetic data only, D017/D019/D020)
+# Read-only, no secrets, no pull_request_target. Third-party actions pinned by commit SHA.
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b
+        with:
+          tool: cargo-audit,cargo-deny
+      - name: Known-advisory check on the lockfile
+        run: cargo audit
+      - name: Advisories, bans, licenses, sources
+        run: cargo deny check
+  aarch64-qemu:
+    # Checks aarch64 code generation only. This is a normal Linux libc under qemu,
+    # NOT Android: a pass here must not be reported as Android-verified (D020).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install toolchain, cross linker and qemu
+        run: |
+          rustup toolchain install 1.92.0 --profile minimal --target aarch64-unknown-linux-gnu
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu qemu-user
+      - name: Run core tests under qemu-aarch64
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64 -L /usr/aarch64-linux-gnu
+        run: >
+          cargo +1.92.0 test -p areatm-kagilink-core --release --locked
+          --target aarch64-unknown-linux-gnu
+  android-compile:
+    # Compile-only evidence for the Android target. Test execution on a real device
+    # is manual and run by the Android session (D020).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Build core library for aarch64-linux-android
+        run: |
+          rustup toolchain install 1.92.0 --profile minimal --target aarch64-linux-android
+          cargo +1.92.0 build -p areatm-kagilink-core --release --locked --target aarch64-linux-android
