@@ -552,3 +552,13 @@ assumed. Platform behaviour is still unmeasured.
 ## D027 — BLE chunk codec exposed through the C ABI (ABI v2), 2026-11-06
 
 Implements open item (c) of D025/D026 at the code level. `core/kagilink-ffi` now exports the shared `ble_frame` codec so phone platforms stop re-implementing docs/BLE_GATT_SPEC.md section 5: `kl_frame_chunk`, `kl_reassembler_new/push/take/is_dead/free`, `kl_ack_chunk`, `kl_parse_ack`. Same conventions as the rest of the ABI (opaque handle, caller buffers with size query, `try_lock`, `catch_unwind`, no Rust-allocated memory). Chunking returns all chunks in one length-prefixed buffer (u32 big-endian, as `kl_channel_seal` does) instead of an index-based getter: one call, no per-index state, same unpacking code in every host. A completed message is held in the reassembler handle and copied out by `kl_reassembler_take` (BUFFER keeps it held, success erases the held copy). Codec errors are final and map to the existing `KL_ERR_*` codes. Because functions were added, `KL_ABI_VERSION` is 2 (any host built against v1 refuses a v2 library; the Android spike expectation was updated; the Swift binding reads the header constant). Nothing about the wire format, security policy or scope changed. Platform BLE implementations of this codec are still not started.
+
+## D028 — No personal identifiers in the public repository, 2026-11-06
+
+Trigger: a spike branch carried a named Apple signing identity and a device UDID as script defaults; it was caught
+before reaching `main`, but the old commits stay reachable on GitHub by SHA until GitHub removes them (not
+guaranteed for non-credential data). Rule (AGENTS.md): signing identities, account/certificate IDs tied to a person, device
+identifiers, personal e-mail and key material are never committed; scripts require environment variables.
+Enforcement: `tools/check-no-personal-ids.sh` (patterns only, self-testing, prints file:line without the value) runs in the
+`personal-ids` job of `core-hardening.yml`. Limits: it catches the listed patterns, not every personal datum; it does not
+rewrite history; it does not replace review. All agent sessions are told to pull `main` and follow it.
