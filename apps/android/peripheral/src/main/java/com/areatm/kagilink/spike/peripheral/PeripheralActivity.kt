@@ -26,6 +26,7 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
     private lateinit var codeField: EditText
     private lateinit var notifyBox: CheckBox
     private var faultSpinner: Spinner? = null
+    private var keepFault: CheckBox? = null
     private lateinit var tagView: TextView
     private lateinit var statusView: TextView
     private lateinit var startBtn: Button
@@ -51,12 +52,14 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
         notifyBox = CheckBox(this).apply { text = "Notify + app ACK mode (default: Indicate)" }
         col.addView(notifyBox)
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            col.addView(TextView(this).apply { text = "TEST ONLY fault injection (resets to none after each run):" })
+            col.addView(TextView(this).apply { text = "TEST ONLY fault injection (resets to none after each run unless kept):" })
             faultSpinner = Spinner(this).apply {
                 adapter = ArrayAdapter(this@PeripheralActivity, android.R.layout.simple_spinner_dropdown_item,
                     PeripheralSession.Fault.values().map { it.label })
             }
             col.addView(faultSpinner)
+            keepFault = CheckBox(this).apply { text = "keep fault selected after a run (for repeated attempts)" }
+            col.addView(keepFault)
         }
         startBtn = Button(this).apply { text = "Start (advertise 60 s)"; setOnClickListener { onStartClicked() } }
         col.addView(startBtn)
@@ -102,7 +105,7 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
     override fun onFinished(summary: String) {
         runOnUiThread {
             statusView.append(summary + "\n")
-            faultSpinner?.setSelection(0)
+            if (keepFault?.isChecked != true) faultSpinner?.setSelection(0)
             startBtn.isEnabled = true; approveBtn.isEnabled = false; tagView.text = "----"
         }
     }
