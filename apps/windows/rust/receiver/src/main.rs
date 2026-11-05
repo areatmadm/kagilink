@@ -5,7 +5,7 @@
 //!              secret. `--accept` answers the risk notice non-interactively (for tests/CI).
 //! There is no BLE and no text entry into other windows yet.
 
-use areatm_kagilink_core::{os_rng, Clock, ReceiverSession, SystemClock, MAX_FAILURES};
+use areatm_kagilink_core::{os_rng, Clock, ReceiverSession, SystemClock};
 use areatm_kagilink_receiver::fake_sender::{Behaviour, FakeSender};
 use areatm_kagilink_receiver::session::{run_attempt, SessionError};
 use areatm_kagilink_receiver::{
@@ -162,6 +162,7 @@ fn fake_session(args: &[String]) -> ExitCode {
 /// Real BLE session: show the code, scan, let the USER choose a row, connect, run one attempt.
 #[cfg(windows)]
 fn ble_receive(args: &[String]) -> ExitCode {
+    use areatm_kagilink_core::MAX_FAILURES;
     use areatm_kagilink_receiver::selection::build_list;
     let gate = match acknowledged_gate(args) {
         Ok(g) => g,
