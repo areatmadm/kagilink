@@ -56,6 +56,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         const val MESSAGE_MS = 5_000L
         const val ACK_MS = 2_000L
         const val FAULT_DELAY_MS = 6_000L
+        const val FAULT_DELAY_LONG_MS = 11_000L
         const val FAULT_CHUNK = 32 // small chunks so that M2 has >= 3 chunks for the chunk faults
         const val MAX_CHUNK_CAP = 244
         val SYNTHETIC_SECRET = "synthetic-secret-android-kl-v1".toByteArray()
@@ -78,7 +79,8 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         CHUNK_DROP("d2: drop a chunk of M2"),
         CHUNK_SWAP("d3: swap two chunks of M2"),
         NO_RESPONSE("e1: never answer M1"),
-        DELAY_M2("e2: answer M1 after 6 s (>5 s)"),
+        DELAY_M2("e2: answer M1 after 6 s (must still succeed)"),
+        DELAY_M2_LONG("e3: answer M1 after 11 s (receiver times out)"),
         TAMPER_SECRET("f: SECRET fragment with one byte flipped"),
     }
 
@@ -396,15 +398,16 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
                     SecureRandom().nextBytes(m2)
                     Log.i(TAG, "fault injected: M2 replaced by ${m2.size} random bytes")
                 }
-                if (fault == Fault.DELAY_M2) {
+                if (fault == Fault.DELAY_M2 || fault == Fault.DELAY_M2_LONG) {
                     val sess = sessionTimer
-                    ui.onStatus("FAULT e2: M2 delayed ${FAULT_DELAY_MS} ms")
+                    val delay = if (fault == Fault.DELAY_M2) FAULT_DELAY_MS else FAULT_DELAY_LONG_MS
+                    ui.onStatus("FAULT ${fault.name}: M2 delayed $delay ms")
                     h.postDelayed({
                         if (sess === sessionTimer && state == State.AWAIT_M3) {
-                            Log.i(TAG, "fault injected: M2 sent after ${FAULT_DELAY_MS} ms")
+                            Log.i(TAG, "fault injected: M2 sent after $delay ms")
                             sendM2(m2)
                         }
-                    }, FAULT_DELAY_MS)
+                    }, delay)
                 } else {
                     sendM2(m2)
                     ui.onStatus("M1 received, M2 sent")
