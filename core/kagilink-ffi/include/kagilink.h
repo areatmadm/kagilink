@@ -3,25 +3,26 @@
  * Apache-2.0. Synthetic-data use only until independent review (D012/D014/D016).
  *
  * Conventions
- *  - Opaque handles are created and freed only by this library. *_free(NULL) is a no-op.
- *    A freed handle must not be used again.
- *  - A free MUST be exclusive: never concurrent with ANY other call on the same handle, and
- *    never twice for the same handle. The library cannot detect a double free or a use after
- *    free (handles are plain pointers): that is undefined behaviour, not an error code. Host
- *    wrappers must therefore own each handle exactly once and release it exactly once, e.g.
- *    Kotlin: AtomicLong.getAndSet(0) and free only a non-zero previous value (then ensure no
- *    other thread is inside a call on it); Swift: free in the owning class deinit (the last
- *    reference, so no call can be in flight); C++: std::unique_ptr with a deleter, move-only.
- *    A library-side handle table with generation tokens is required before real secrets are
- *    handled (docs/FFI_DESIGN.md).
+ *  - Opaque handles are created and freed only by this library. They are NOT pointers: a
+ *    handle is an encoded slot+generation token that is looked up in a library registry and
+ *    never dereferenced. *_free(NULL) is a no-op. Using a freed, forged or wrong-type handle
+ *    returns KL_ERR_NULL (kl_channel_is_closed and kl_reassembler_is_dead return 1); freeing
+ *    twice, freeing a stale handle or a garbage value is a harmless no-op. None of these is
+ *    undefined behaviour. Hosts should still own each handle once and free it once.
+ *  - A free concurrent with a call on the same handle is memory-safe: the handle dies at once
+ *    (new calls get KL_ERR_NULL), the free then waits only for the in-flight call to finish and
+ *    erases the secrets before it returns. A second concurrent free of the same handle returns
+ *    immediately and may return before the first has finished erasing. Token generations wrap
+ *    after 2^40 reuses of one slot (2^20 on 32-bit targets); the live-handle limit is 2^24-1
+ *    (2^12-1 on 32-bit), KL_ERR_LIMITS when exceeded.
  *  - Output buffers: `uint8_t* out, size_t* out_len`. *out_len is the capacity on entry and
  *    the written length on success. If too small the call returns KL_ERR_BUFFER, sets
  *    *out_len to the required size, writes nothing and consumes no protocol state. `out` may
  *    be NULL with *out_len == 0 for a size query. Outputs are written only on success.
  *  - Inputs: a NULL pointer is accepted only with length 0. Lengths above 1 MiB are rejected
  *    (KL_ERR_LIMITS).
- *  - Handles are single-threaded; a concurrent non-free call returns KL_ERR_BUSY (never
- *    blocks). KL_ERR_BUSY does NOT cover a call racing with a free of the same handle.
+ *  - Handle state is single-threaded; a concurrent non-free call on the same handle returns
+ *    KL_ERR_BUSY (never blocks). A racing free is covered by the registry rule above.
  *  - Buffers passed as an input and as an output in the same call must not overlap, and an
  *    output buffer must not alias another output (the library does not check this).
  *  - KL_ERR_PANIC means an internal panic was caught: discard the handle.

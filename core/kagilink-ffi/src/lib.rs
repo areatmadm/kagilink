@@ -1,7 +1,10 @@
 //! Plain C ABI over `areatm-kagilink-core` (decision D016, docs/FFI_DESIGN.md).
 //!
 //! This is the only crate in the workspace that may contain `unsafe`. Rules:
-//! * opaque handles, created and freed only here; no Rust-allocated memory is returned;
+//! * opaque handles, created and freed only here; no Rust-allocated memory is returned. A
+//!   handle is NOT a pointer: it is an encoded slot+generation token resolved through a global
+//!   registry (see the registry section), so stale, doubled and racing frees are errors or
+//!   no-ops, never use-after-free;
 //! * caller-allocated output buffers (`out`, `*out_len` = capacity in / length out);
 //!   a too-small buffer yields `KL_ERR_BUFFER` with the required size and consumes no
 //!   protocol state (sizes are checked before the operation, or the result is held);
@@ -10,7 +13,8 @@
 //!   and uses `try_lock` (`KL_ERR_BUSY`);
 //! * ABI v2 adds the BLE chunk codec (`kl_frame_*`, `kl_reassembler_*`, `kl_ack_*`); it is
 //!   pure and carries opaque bytes, with the same buffer and handle conventions;
-//! * no logging, no callbacks, no global state, no secret text in any return value.
+//! * no logging, no callbacks, no secret text in any return value; the only global state is the
+//!   handle registry (tokens and `Arc`s, no secrets of its own).
 //!
 //! Synthetic data only until an independent review of this `unsafe` code exists.
 
@@ -25,6 +29,9 @@ use areatm_kagilink_core::transport::{
 };
 use areatm_kagilink_core::wire::{NONCE_LEN, SHARE_LEN, SID_LEN, SUITE, TAG_LEN};
 use areatm_kagilink_core::{os_rng, Code, Error, ReceiverSession, SenderPending, SystemClock};
+use std::any::Any;
+use std::collections::hash_map::RandomState;
+use std::hash::{BuildHasher, Hasher};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use zeroize::Zeroize;
@@ -120,15 +127,39 @@ impl From<Error> for kl_status_t {
 type St = kl_status_t;
 type Res<T> = Result<T, St>;
 
-/// Opaque receiver handle (wraps `ReceiverSession`).
+/// Opaque receiver handle type. A `kl_receiver_t*` is a registry token, never dereferenced.
+#[repr(C)]
 pub struct kl_receiver_t {
-    inner: Mutex<ReceiverSession>,
+    _private: [u8; 0],
+}
+
+/// Opaque sender handle type (token; the pending state is emptied by `kl_sender_finish`).
+#[repr(C)]
+pub struct kl_sender_t {
+    _private: [u8; 0],
+}
+
+/// Opaque channel handle type (token).
+#[repr(C)]
+pub struct kl_channel_t {
+    _private: [u8; 0],
+}
+
+/// Opaque BLE chunk reassembler handle type (token).
+#[repr(C)]
+pub struct kl_reassembler_t {
+    _private: [u8; 0],
+}
+
+/// Real receiver object; `None` after a free (late in-flight calls then see `KL_ERR_NULL`).
+struct ReceiverObj {
+    inner: Mutex<Option<ReceiverSession>>,
     id_len: usize,
     claims_len: usize,
 }
 
-/// Opaque sender handle (wraps `SenderPending`; emptied by `kl_sender_finish`).
-pub struct kl_sender_t {
+/// Real sender object; the pending state is `None` after finish or free.
+struct SenderObj {
     inner: Mutex<Option<SenderPending>>,
 }
 
@@ -138,8 +169,8 @@ struct ChannelState {
     held: Option<Message>,
 }
 
-/// Opaque channel handle (wraps `SecureChannel`).
-pub struct kl_channel_t {
+/// Real channel object; closed and wiped by free.
+struct ChannelObj {
     inner: Mutex<ChannelState>,
 }
 
@@ -149,9 +180,215 @@ struct ReassemblerState {
     held: Option<(u8, Vec<u8>)>,
 }
 
-/// Opaque BLE chunk reassembler handle (wraps `ble_frame::Reassembler`).
-pub struct kl_reassembler_t {
-    inner: Mutex<ReassemblerState>,
+/// Real reassembler object; `None` after a free.
+struct ReasmObj {
+    inner: Mutex<Option<ReassemblerState>>,
+}
+
+// ---------------------------------------------------------------------------------------
+// Handle registry (docs/FFI_DESIGN.md "Handle registry").
+//
+// A handle handed to C is a token: `(generation << IDX_BITS | slot_index) ^ mask`, cast to the
+// pointer type. It is never dereferenced. All lookups go through one global registry:
+//  * `resolve` clones the `Arc` under the registry lock and releases the lock BEFORE the caller
+//    touches the object, so a concurrent free can never free memory under a live call;
+//  * `unregister` (used by every free) removes the slot, bumps its generation (so the old token
+//    and every copy of it is dead) and returns the `Arc` for wiping outside the lock;
+//  * generation 0 is never issued and `0` is never a valid token, so NULL, small integers and
+//    most garbage fail; `mask` (per process, from `RandomState`, NOT a secret or a security
+//    boundary) makes accidental hits by arbitrary integers or addresses negligible;
+//  * the generation wraps after 2^GEN_BITS reuses of one slot (2^40 on 64-bit, 2^20 on 32-bit
+//    targets); a token held across that many free/allocate cycles of the same slot could alias;
+//  * LOCK ORDER: the registry lock is a leaf. It is never held while an object mutex is taken or
+//    while core code runs, and an object mutex is never held while the registry lock is taken.
+//    Dropping an `Arc` (and so running secret zeroization) always happens after the guard is
+//    released.
+// ---------------------------------------------------------------------------------------
+
+const IDX_BITS: u32 = if usize::BITS >= 64 { 24 } else { 12 };
+const GEN_BITS: u32 = usize::BITS - IDX_BITS;
+const IDX_MASK: usize = (1usize << IDX_BITS) - 1;
+const GEN_MASK: usize = (1usize << GEN_BITS) - 1;
+
+type Obj = Arc<dyn Any + Send + Sync>;
+
+struct Slot {
+    gen: usize,
+    obj: Option<Obj>,
+}
+
+struct Registry {
+    slots: Vec<Slot>,
+    free: Vec<usize>,
+    mask: usize,
+    mask_ready: bool,
+}
+
+static REGISTRY: Mutex<Registry> = Mutex::new(Registry {
+    slots: Vec::new(),
+    free: Vec::new(),
+    mask: 0,
+    mask_ready: false,
+});
+
+fn registry() -> MutexGuard<'static, Registry> {
+    // Registry operations cannot panic while holding the lock; recover a poisoned one anyway.
+    REGISTRY.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+impl Registry {
+    fn encode(&self, idx: usize, gen: usize) -> usize {
+        ((gen << IDX_BITS) | idx) ^ self.mask
+    }
+
+    fn insert(&mut self, obj: Obj) -> Res<usize> {
+        if !self.mask_ready {
+            let mut h = RandomState::new().build_hasher();
+            h.write_u8(1);
+            self.mask = h.finish() as usize;
+            self.mask_ready = true;
+        }
+        let idx = if let Some(i) = self.free.pop() {
+            i
+        } else {
+            if self.slots.len() >= IDX_MASK {
+                return Err(KL_ERR_LIMITS); // too many live handles
+            }
+            self.slots.push(Slot { gen: 1, obj: None });
+            self.slots.len() - 1
+        };
+        let mut gen = self.slots[idx].gen;
+        let mut tok = self.encode(idx, gen);
+        while tok == 0 {
+            gen = next_gen(gen); // never hand out the NULL value
+            tok = self.encode(idx, gen);
+        }
+        let slot = &mut self.slots[idx];
+        slot.gen = gen;
+        slot.obj = Some(obj);
+        Ok(tok)
+    }
+
+    /// Slot index of a live token, or `None` (stale, forged, NULL).
+    fn find(&self, tok: usize) -> Option<usize> {
+        if tok == 0 || !self.mask_ready {
+            return None;
+        }
+        let v = tok ^ self.mask;
+        let idx = v & IDX_MASK;
+        let gen = (v >> IDX_BITS) & GEN_MASK;
+        let slot = self.slots.get(idx)?;
+        (gen != 0 && slot.gen == gen && slot.obj.is_some() && self.encode(idx, gen) == tok)
+            .then_some(idx)
+    }
+}
+
+fn next_gen(g: usize) -> usize {
+    let n = g.wrapping_add(1) & GEN_MASK;
+    if n == 0 {
+        1
+    } else {
+        n
+    }
+}
+
+/// Register a new object and return its token.
+fn register<T: Any + Send + Sync>(obj: T) -> Res<usize> {
+    let obj: Obj = Arc::new(obj);
+    registry().insert(obj)
+}
+
+/// Look up a token and clone the object. Wrong type, stale, forged and NULL all give NULL.
+fn resolve<T: Any + Send + Sync>(tok: usize) -> Res<Arc<T>> {
+    let found = {
+        let g = registry();
+        let idx = g.find(tok).ok_or(KL_ERR_NULL)?;
+        g.slots[idx].obj.clone().ok_or(KL_ERR_NULL)?
+    }; // guard released before any use of the object
+    found.downcast::<T>().map_err(|_| KL_ERR_NULL)
+}
+
+/// Remove a live token of type `T` (bumping the slot generation) and return the object.
+/// `None` for stale, doubled, forged, NULL or wrong-type tokens (nothing is changed then).
+fn unregister<T: Any + Send + Sync>(tok: usize) -> Option<Arc<T>> {
+    let taken = {
+        let mut g = registry();
+        let idx = g.find(tok)?;
+        let slot = &mut g.slots[idx];
+        let same_type = slot.obj.as_ref().is_some_and(|o| {
+            let r: &(dyn Any + Send + Sync) = &**o;
+            r.is::<T>()
+        });
+        if !same_type {
+            return None;
+        }
+        let obj = slot.obj.take();
+        slot.gen = next_gen(slot.gen);
+        g.free.push(idx);
+        obj
+    }; // guard released
+    taken?.downcast::<T>().ok()
+}
+
+/// Objects that can be erased in place while other `Arc` clones may still exist.
+trait Wipe {
+    /// Erase all secret state. Blocks only until an in-flight call on the same object finishes
+    /// (calls never block, so this is short); a poisoned mutex is recovered and still erased.
+    fn wipe(&self);
+}
+
+impl Wipe for ReceiverObj {
+    fn wipe(&self) {
+        drop(wipe_lock(&self.inner).take());
+    }
+}
+impl Wipe for SenderObj {
+    fn wipe(&self) {
+        drop(wipe_lock(&self.inner).take());
+    }
+}
+impl Wipe for ChannelObj {
+    fn wipe(&self) {
+        wipe_lock(&self.inner).close_and_wipe();
+    }
+}
+impl Wipe for ReasmObj {
+    fn wipe(&self) {
+        let mut g = wipe_lock(&self.inner);
+        if let Some(st) = g.as_mut() {
+            if let Some((_, d)) = st.held.as_mut() {
+                d.zeroize();
+            }
+        }
+        *g = None;
+    }
+}
+
+fn wipe_lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Free rule: the token dies first (new calls get `KL_ERR_NULL`), then the object is wiped
+/// under its own mutex (after any in-flight call finishes), then the last `Arc` drops.
+/// Stale, doubled, NULL, forged and wrong-type tokens are a no-op.
+fn release<T: Wipe + Any + Send + Sync>(tok: usize) {
+    if let Some(obj) = unregister::<T>(tok) {
+        obj.wipe();
+        drop(obj);
+    }
+}
+
+fn token_of<T>(p: *mut T) -> usize {
+    p as usize
+}
+
+fn token_ptr<T>(t: usize) -> *mut T {
+    t as *mut T
+}
+
+/// Resolve a handle token of the expected object type.
+fn handle<O: Any + Send + Sync, T>(p: *mut T) -> Res<Arc<O>> {
+    resolve::<O>(token_of(p))
 }
 
 // ---------------------------------------------------------------------------------------
@@ -213,13 +450,6 @@ unsafe fn in_slice<'a>(p: *const u8, len: usize) -> Res<&'a [u8]> {
     }
     // SAFETY: non-null, len bounded by MAX_IN; the caller guarantees `len` readable bytes.
     Ok(unsafe { std::slice::from_raw_parts(p, len) })
-}
-
-/// # Safety
-/// `p` must be NULL or point to a live handle created by this library.
-unsafe fn handle<'a, T>(p: *const T) -> Res<&'a T> {
-    // SAFETY: caller guarantees NULL or a live handle; NULL is turned into an error.
-    unsafe { p.as_ref() }.ok_or(KL_ERR_NULL)
 }
 
 /// Validate an out-handle slot and set it to NULL.
@@ -352,13 +582,13 @@ pub unsafe extern "C" fn kl_receiver_new(
         };
         let mut rng = os_rng();
         let s = ReceiverSession::new(Arc::new(SystemClock::new()), &mut rng, id, cl)?;
-        let b = Box::new(kl_receiver_t {
-            inner: Mutex::new(s),
+        let tok = register(ReceiverObj {
+            inner: Mutex::new(Some(s)),
             id_len: id.len(),
             claims_len: cl.len(),
-        });
+        })?;
         // SAFETY: `out` was validated non-null and writable above.
-        unsafe { *out = Box::into_raw(b) };
+        unsafe { *out = token_ptr(tok) };
         Ok(())
     })
 }
@@ -374,11 +604,11 @@ pub unsafe extern "C" fn kl_receiver_code(
     out_len: *mut usize,
 ) -> kl_status_t {
     run(|| {
+        let r = handle::<ReceiverObj, _>(r)?;
         // SAFETY: pointers validated by the helpers.
-        let r = unsafe { handle(r)? };
         let ob = unsafe { OutBuf::prep(out, out_len, 6)? };
         let g = lock(&r.inner)?;
-        let code = g.code()?;
+        let code = g.as_ref().ok_or(KL_ERR_NULL)?.code()?;
         // SAFETY: ob validated with capacity >= 6.
         unsafe { ob.put(code.as_bytes()) }
     })
@@ -395,12 +625,12 @@ pub unsafe extern "C" fn kl_receiver_begin_attempt(
     out_len: *mut usize,
 ) -> kl_status_t {
     run(|| {
+        let r = handle::<ReceiverObj, _>(r)?;
         // SAFETY: pointers validated by the helpers.
-        let r = unsafe { handle(r)? };
         let ob = unsafe { OutBuf::prep(out_m1, out_len, m1_len(r.id_len, r.claims_len))? };
         let mut g = lock(&r.inner)?;
         let mut rng = os_rng();
-        let m1 = g.begin_attempt(&mut rng)?;
+        let m1 = g.as_mut().ok_or(KL_ERR_NULL)?.begin_attempt(&mut rng)?;
         // SAFETY: ob validated.
         unsafe { ob.put(&m1) }
     })
@@ -419,13 +649,13 @@ pub unsafe extern "C" fn kl_receiver_handle_m2(
     out_len: *mut usize,
 ) -> kl_status_t {
     run(|| {
+        let r = handle::<ReceiverObj, _>(r)?;
         // SAFETY: pointers validated by the helpers.
-        let r = unsafe { handle(r)? };
         let m2 = unsafe { in_slice(m2, m2_len)? };
         let ob = unsafe { OutBuf::prep(out_m3, out_len, M3_LEN)? };
         let mut g = lock(&r.inner)?;
         let mut rng = os_rng();
-        let m3 = g.handle_m2(&mut rng, m2)?;
+        let m3 = g.as_mut().ok_or(KL_ERR_NULL)?.handle_m2(&mut rng, m2)?;
         // SAFETY: ob validated.
         unsafe { ob.put(&m3) }
     })
@@ -445,28 +675,27 @@ pub unsafe extern "C" fn kl_receiver_finish(
     run(|| {
         // SAFETY: pointers validated by the helpers.
         unsafe { clear_slot(out_channel)? };
-        let r = unsafe { handle(r)? };
+        let r = handle::<ReceiverObj, _>(r)?;
         let m4 = unsafe { in_slice(m4, m4_len)? };
         let mut g = lock(&r.inner)?;
-        let ch = g.handle_m4(m4)?;
-        drop(g);
+        let ch = g.as_mut().ok_or(KL_ERR_NULL)?.handle_m4(m4)?;
+        drop(g); // object mutex released before the registry is touched (lock order)
+        let tok = new_channel(ch)?;
         // SAFETY: out_channel validated non-null and writable above.
-        unsafe { *out_channel = new_channel(ch) };
+        unsafe { *out_channel = token_ptr(tok) };
         Ok(())
     })
 }
 
-/// Free a receiver handle. NULL is a no-op. The handle must not be used afterwards.
+/// Free a receiver handle. NULL, stale and already-freed handles are a no-op. Secrets are erased
+/// before this returns (after an in-flight call on the same handle finishes).
 ///
 /// # Safety
-/// `r` NULL or a handle from `kl_receiver_new` not yet freed.
+/// Memory-safe for any `r` value; no pointer is ever dereferenced.
 #[no_mangle]
 pub unsafe extern "C" fn kl_receiver_free(r: *mut kl_receiver_t) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        if !r.is_null() {
-            // SAFETY: created by Box::into_raw in kl_receiver_new; freed once (caller contract).
-            drop(unsafe { Box::from_raw(r) });
-        }
+        release::<ReceiverObj>(token_of(r));
     }));
 }
 
@@ -516,13 +745,16 @@ pub unsafe extern "C" fn kl_sender_start(
             pu,
             cl,
         )?;
-        // SAFETY: ob validated.
-        unsafe { ob.put(&m2)? };
-        let b = Box::new(kl_sender_t {
+        let tok = register(SenderObj {
             inner: Mutex::new(Some(pending)),
-        });
+        })?;
+        // SAFETY: ob validated.
+        if let Err(e) = unsafe { ob.put(&m2) } {
+            release::<SenderObj>(tok);
+            return Err(e);
+        }
         // SAFETY: out_sender validated non-null and writable above.
-        unsafe { *out_sender = Box::into_raw(b) };
+        unsafe { *out_sender = token_ptr(tok) };
         Ok(())
     })
 }
@@ -545,32 +777,34 @@ pub unsafe extern "C" fn kl_sender_finish(
     run(|| {
         // SAFETY: pointers validated by the helpers.
         unsafe { clear_slot(out_channel)? };
-        let s = unsafe { handle(s)? };
+        let s = handle::<SenderObj, _>(s)?;
         let m3 = unsafe { in_slice(m3, m3_len)? };
         let ob = unsafe { OutBuf::prep(out_m4, out_len, M4_LEN)? };
         let mut g = lock(&s.inner)?;
         let pending = g.take().ok_or(KL_ERR_WRONG_STATE)?;
         drop(g);
         let (m4, ch) = pending.handle_m3(m3)?;
+        let tok = new_channel(ch)?;
         // SAFETY: ob validated.
-        unsafe { ob.put(&m4)? };
+        if let Err(e) = unsafe { ob.put(&m4) } {
+            release::<ChannelObj>(tok);
+            return Err(e);
+        }
         // SAFETY: out_channel validated non-null and writable above.
-        unsafe { *out_channel = new_channel(ch) };
+        unsafe { *out_channel = token_ptr(tok) };
         Ok(())
     })
 }
 
-/// Free a sender handle. NULL is a no-op; also valid after `kl_sender_finish`.
+/// Free a sender handle. NULL, stale and already-freed handles are a no-op; also valid after
+/// `kl_sender_finish`.
 ///
 /// # Safety
-/// `s` NULL or a handle from `kl_sender_start` not yet freed.
+/// Memory-safe for any `s` value; no pointer is ever dereferenced.
 #[no_mangle]
 pub unsafe extern "C" fn kl_sender_free(s: *mut kl_sender_t) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        if !s.is_null() {
-            // SAFETY: created by Box::into_raw in kl_sender_start; freed once (caller contract).
-            drop(unsafe { Box::from_raw(s) });
-        }
+        release::<SenderObj>(token_of(s));
     }));
 }
 
@@ -578,10 +812,10 @@ pub unsafe extern "C" fn kl_sender_free(s: *mut kl_sender_t) {
 // Channel
 // ---------------------------------------------------------------------------------------
 
-fn new_channel(ch: SecureChannel) -> *mut kl_channel_t {
-    Box::into_raw(Box::new(kl_channel_t {
+fn new_channel(ch: SecureChannel) -> Res<usize> {
+    register(ChannelObj {
         inner: Mutex::new(ChannelState { ch, held: None }),
-    }))
+    })
 }
 
 /// Sender: grant exactly one SECRET transfer. Call only after local user approval.
@@ -591,8 +825,7 @@ fn new_channel(ch: SecureChannel) -> *mut kl_channel_t {
 #[no_mangle]
 pub unsafe extern "C" fn kl_channel_approve_one_transfer(c: *mut kl_channel_t) -> kl_status_t {
     run(|| {
-        // SAFETY: validated by `handle`.
-        let c = unsafe { handle(c)? };
+        let c = handle::<ChannelObj, _>(c)?;
         let mut g = lock(&c.inner)?;
         if g.ch.poll_closed() {
             g.held = None;
@@ -613,8 +846,7 @@ pub unsafe extern "C" fn kl_channel_set_ready_to_receive(
     ready: u8,
 ) -> kl_status_t {
     run(|| {
-        // SAFETY: validated by `handle`.
-        let c = unsafe { handle(c)? };
+        let c = handle::<ChannelObj, _>(c)?;
         let mut g = lock(&c.inner)?;
         if g.ch.poll_closed() {
             g.held = None;
@@ -656,8 +888,7 @@ pub unsafe extern "C" fn kl_channel_seal(
     out_count: *mut usize,
 ) -> kl_status_t {
     run(|| {
-        // SAFETY: pointers validated by the helpers.
-        let c = unsafe { handle(c)? };
+        let c = handle::<ChannelObj, _>(c)?;
         let pt = unsafe { in_slice(plaintext, plaintext_len)? };
         if out_count.is_null() {
             return Err(KL_ERR_NULL);
@@ -717,8 +948,7 @@ pub unsafe extern "C" fn kl_channel_open_fragment(
     out_complete: *mut u8,
 ) -> kl_status_t {
     run(|| {
-        // SAFETY: pointers validated by the helpers.
-        let c = unsafe { handle(c)? };
+        let c = handle::<ChannelObj, _>(c)?;
         let frag = unsafe { in_slice(fragment, fragment_len)? };
         if out_len.is_null() || out_kind.is_null() || out_complete.is_null() {
             return Err(KL_ERR_NULL);
@@ -778,8 +1008,7 @@ pub unsafe extern "C" fn kl_channel_open_fragment(
 #[no_mangle]
 pub unsafe extern "C" fn kl_channel_close(c: *mut kl_channel_t) -> kl_status_t {
     run(|| {
-        // SAFETY: validated by `handle`.
-        let c = unsafe { handle(c)? };
+        let c = handle::<ChannelObj, _>(c)?;
         // Poisoned mutexes are recovered so keys and held data are still erased.
         let mut g = lock_for_wipe(&c.inner)?;
         g.close_and_wipe();
@@ -795,40 +1024,31 @@ pub unsafe extern "C" fn kl_channel_close(c: *mut kl_channel_t) -> kl_status_t {
 #[no_mangle]
 pub unsafe extern "C" fn kl_channel_is_closed(c: *mut kl_channel_t) -> u8 {
     catch_unwind(AssertUnwindSafe(|| {
-        // SAFETY: validated by `handle`.
-        let Ok(c) = (unsafe { handle(c) }) else {
+        let Ok(c) = handle::<ChannelObj, _>(c) else {
             return 1;
         };
-        match lock(&c.inner) {
+        let r = match lock(&c.inner) {
             Ok(mut g) => {
                 let closed = g.ch.poll_closed();
                 g.wipe_held_if_closed();
                 u8::from(closed)
             }
             Err(_) => 1,
-        }
+        };
+        r
     }))
     .unwrap_or(1)
 }
 
-/// Free a channel handle (keys already erased on drop). NULL is a no-op.
+/// Free a channel handle: keys and held plaintext are erased before this returns (after an
+/// in-flight call on the same handle finishes). NULL, stale and doubled frees are a no-op.
 ///
 /// # Safety
-/// `c` NULL or a handle from a finish function not yet freed.
+/// Memory-safe for any `c` value; no pointer is ever dereferenced.
 #[no_mangle]
 pub unsafe extern "C" fn kl_channel_free(c: *mut kl_channel_t) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        if !c.is_null() {
-            // SAFETY: created by Box::into_raw in new_channel; freed once, with no concurrent
-            // call on the handle (caller contract, see kagilink.h).
-            let mut b = unsafe { Box::from_raw(c) };
-            // Exclusive ownership: no lock needed, and a poisoned mutex is still wiped.
-            b.inner
-                .get_mut()
-                .unwrap_or_else(PoisonError::into_inner)
-                .close_and_wipe();
-            drop(b);
-        }
+        release::<ChannelObj>(token_of(c));
     }));
 }
 
@@ -886,14 +1106,14 @@ pub unsafe extern "C" fn kl_reassembler_new(out: *mut *mut kl_reassembler_t) -> 
     run(|| {
         // SAFETY: `out` validated inside.
         unsafe { clear_slot(out)? };
-        let b = Box::new(kl_reassembler_t {
-            inner: Mutex::new(ReassemblerState {
+        let tok = register(ReasmObj {
+            inner: Mutex::new(Some(ReassemblerState {
                 r: Reassembler::new(),
                 held: None,
-            }),
-        });
+            })),
+        })?;
         // SAFETY: `out` was validated non-null and writable above.
-        unsafe { *out = Box::into_raw(b) };
+        unsafe { *out = token_ptr(tok) };
         Ok(())
     })
 }
@@ -915,15 +1135,16 @@ pub unsafe extern "C" fn kl_reassembler_push(
     out_complete: *mut u8,
 ) -> kl_status_t {
     run(|| {
+        let h = handle::<ReasmObj, _>(h)?;
         // SAFETY: pointers validated by the helpers.
-        let h = unsafe { handle(h)? };
         let chunk = unsafe { in_slice(chunk, chunk_len)? };
         if out_complete.is_null() {
             return Err(KL_ERR_NULL);
         }
         // SAFETY: out_complete validated non-null.
         unsafe { *out_complete = 0 };
-        let mut g = lock(&h.inner)?;
+        let mut guard = lock(&h.inner)?;
+        let g = guard.as_mut().ok_or(KL_ERR_NULL)?;
         if g.held.is_some() {
             return Err(KL_ERR_WRONG_STATE);
         }
@@ -951,12 +1172,12 @@ pub unsafe extern "C" fn kl_reassembler_take(
     out_len: *mut usize,
 ) -> kl_status_t {
     run(|| {
-        // SAFETY: pointers validated by the helpers.
-        let h = unsafe { handle(h)? };
+        let h = handle::<ReasmObj, _>(h)?;
         if out_mtype.is_null() {
             return Err(KL_ERR_NULL);
         }
-        let mut g = lock(&h.inner)?;
+        let mut guard = lock(&h.inner)?;
+        let g = guard.as_mut().ok_or(KL_ERR_NULL)?;
         let need = g.held.as_ref().ok_or(KL_ERR_WRONG_STATE)?.1.len();
         // SAFETY: out_len validated inside; the held message is kept on BUFFER/NULL errors.
         let ob = unsafe { OutBuf::prep(out, out_len, need)? };
@@ -978,36 +1199,27 @@ pub unsafe extern "C" fn kl_reassembler_take(
 #[no_mangle]
 pub unsafe extern "C" fn kl_reassembler_is_dead(h: *mut kl_reassembler_t) -> u8 {
     catch_unwind(AssertUnwindSafe(|| {
-        // SAFETY: validated by `handle`.
-        let Ok(h) = (unsafe { handle(h) }) else {
+        let Ok(h) = handle::<ReasmObj, _>(h) else {
             return 1;
         };
-        match lock(&h.inner) {
-            Ok(g) => u8::from(g.r.is_dead()),
+        let r = match lock(&h.inner) {
+            Ok(g) => g.as_ref().map_or(1, |g| u8::from(g.r.is_dead())),
             Err(_) => 1,
-        }
+        };
+        r
     }))
     .unwrap_or(1)
 }
 
-/// Free a reassembler handle (any held message is erased). NULL is a no-op.
+/// Free a reassembler handle (any held message is erased). NULL, stale and doubled frees are a
+/// no-op.
 ///
 /// # Safety
-/// `h` NULL or a handle from `kl_reassembler_new` not yet freed.
+/// Memory-safe for any `h` value; no pointer is ever dereferenced.
 #[no_mangle]
 pub unsafe extern "C" fn kl_reassembler_free(h: *mut kl_reassembler_t) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        if !h.is_null() {
-            // SAFETY: created by Box::into_raw in kl_reassembler_new; freed once, with no
-            // concurrent call on the handle (caller contract, see kagilink.h).
-            let mut b = unsafe { Box::from_raw(h) };
-            // Exclusive ownership: never blocks; a poisoned mutex is still wiped.
-            let g = b.inner.get_mut().unwrap_or_else(PoisonError::into_inner);
-            if let Some((_, d)) = g.held.as_mut() {
-                d.zeroize();
-            }
-            drop(b);
-        }
+        release::<ReasmObj>(token_of(h));
     }));
 }
 

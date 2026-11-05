@@ -36,15 +36,53 @@ Opaque pointers, created and freed only through the library:
   failure, mirroring `handle_m3(self, ..)`.
 - Handles are not thread-safe. Each handle is used from one thread at a time; the library
   guards with a mutex and returns `KL_ERR_BUSY` on concurrent entry instead of blocking.
-- A free MUST be exclusive: never concurrent with any other call on the same handle, never
-  twice. `KL_ERR_BUSY` only covers concurrent NON-free calls; the library cannot detect a stale
-  or doubly freed pointer. Host wrappers own each handle exactly once (Kotlin
-  `AtomicLong.getAndSet(0)`, Swift `deinit` of the sole owner, C++ `std::unique_ptr`).
-  **REQUIRED before real secrets (not implemented now, independent review finding):** a
-  library-side handle table with generation tokens (opaque 64-bit ids instead of raw pointers) so
-  that use-after-free, double free and free-versus-call races become error codes instead of
-  undefined behaviour. That is an ABI change (ABI v3).
+- Handles are registry tokens, not pointers (see "Handle registry" below). Stale, doubled,
+  forged, NULL and wrong-type handles return `KL_ERR_NULL` (frees are no-ops); a free racing a
+  call is memory-safe. No ABI change: the exported signatures and `KL_ABI_VERSION` (2) are
+  unchanged because the pointer-typed handle is still pointer-sized and opaque to C.
 - Input and output buffers of one call must not overlap (documented, not checked).
+
+## Handle registry (implemented, replaces the raw `Box` pointers)
+
+Resolves the independent-review finding that a free racing a call, a stale handle or a double
+free was use-after-free (the old `try_lock` only guarded concurrent non-free calls).
+
+- Layout: a global `Mutex<Registry>` holds a slab of slots `{generation, Option<Arc<dyn Any>>}`
+  plus a free list. A handle value is `((generation << IDX_BITS) | slot) ^ mask` cast to the C
+  pointer type; it is never dereferenced. 64-bit: 24 index bits, 40 generation bits; 32-bit: 12 and
+  20. `mask` is a per-process value from `std` `RandomState` generated on first use: it only makes
+  accidental hits by arbitrary integers or addresses negligible and is NOT a secret or a security
+  boundary. Generation 0 and the value 0 are never issued, so NULL and small integers always fail.
+- Every call: `resolve` locks the registry, validates slot + generation + type, clones the `Arc`,
+  and releases the registry lock before touching the object. A concurrent free therefore cannot
+  free memory under a live call; the memory lives until the last clone drops.
+- Free: `unregister` removes the slot and bumps its generation under the registry lock (the
+  token is dead from that instant, for every copy), then OUTSIDE the lock the object is wiped
+  under its own mutex and the last `Arc` drops. Secrets are explicitly erased (receiver session and
+  sender pending state dropped, channel closed and held plaintext dropped, reassembler held data
+  zeroized) before `*_free` returns, even when another call holds a clone: the free waits for that
+  in-flight call (a blocking lock, short because no export blocks or calls back) and then wipes,
+  recovering a poisoned mutex. A late call that already held a clone then sees an erased object
+  (`KL_ERR_NULL` or `KL_ERR_CLOSED`). Dropping the last `Arc` zeroizes through the core types as
+  before.
+- Double free, stale free, wrong-type free and garbage free are no-ops (nothing changed). Two
+  racing frees of one token: exactly one wins; the loser returns immediately and may return before
+  the winner finished erasing.
+- Lock order: the registry lock is a leaf, held only for a table lookup, insert or remove. It is
+  never held while an object mutex is taken, while core code runs or while an `Arc` is dropped;
+  an object mutex is never held while the registry lock is taken (finish functions release the
+  object guard before registering the new channel). No deadlock is possible between them. A thread
+  panicking inside an export is caught; a poisoned registry mutex is recovered.
+- `try_lock`/`KL_ERR_BUSY` semantics for concurrent non-free calls are unchanged.
+- Status codes: no new value; a dead handle reuses `KL_ERR_NULL`. `kl_channel_is_closed` and
+  `kl_reassembler_is_dead` return 1 for them. Registry full returns `KL_ERR_LIMITS`.
+- Remaining limits: generation wrap after 2^40 (64-bit) or 2^20 (32-bit) reuses of one slot could
+  alias a very old token; at most 2^24-1 (2^12-1 on 32-bit) live handles; the output-slot pointer
+  (`kl_*_t**`) and the data buffers are still caller-supplied raw pointers and are trusted
+  (non-NULL, writable, non-overlapping) exactly as before; a host that frees while it still
+  has a call outstanding gets defined behaviour but a failed call; the registry is process-global
+  state shared by every library user in the process. Unsafe code was not run under Miri or a
+  sanitizer.
 
 ## Data across the boundary
 

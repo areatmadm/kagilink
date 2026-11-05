@@ -659,3 +659,29 @@ it offers to retry with the SAME code, so the budget can be checked across attem
 (SetMaintainConnection(false) + Close), which may shorten the 3 s drop; UNVERIFIED on a radio. Android fault modes (PR #22) are installed and
 not yet run. Android's fault code is runtime-gated by the debuggable flag (present in release builds, disabled there); it must become
 compile-time-gated before any product build.
+
+### FFI handle registry (review finding 1 closed), 2026-11-06
+
+Implemented in `core/kagilink-ffi` (no exported signature change, ABI stays 2): handles are now opaque slot+generation tokens
+resolved through a global registry (`Mutex<slab of Arc>`), never dereferenced. Every export clones the `Arc` and releases the registry
+lock before touching the object; every free removes the slot and bumps the generation, then erases the secrets under the object's own
+mutex (waiting for an in-flight call) before dropping the last `Arc`. Stale, doubled, forged, NULL and wrong-type handles return
+`KL_ERR_NULL` (frees are no-ops). `try_lock`/`KL_ERR_BUSY` for concurrent non-free calls is unchanged. Lock order: the registry lock is a
+leaf (see `docs/FFI_DESIGN.md`, "Handle registry"). Header, `Native.kt`, `NativeHandle.kt` and FFI_DESIGN text updated; the
+"REQUIRED before real secrets" note is replaced by the implemented design and its remaining limits (generation wrap, live-handle cap,
+trusted caller buffers, process-global registry).
+
+| Check | Result |
+|---|---|
+| cargo fmt, clippy `--workspace --all-targets -D warnings` | clean |
+| `cargo test --workspace` debug and `--release` | 166 passed, 0 failed each (FFI test file: 23 tests) |
+| New Rust tests: double free no-op and use-after-free errors for all four handle kinds; wrong-type token rejected and not freed; forged/garbage tokens (0, 1, usize::MAX, stack and heap addresses, generation-bit flips) rejected by every export; token reuse after free does not resolve to the old object; 200-iteration thread hammer on one channel token (seal/approve/is_closed/close with racing double free) and 200-iteration reassembler hammer | PASS, repeated 6x release and 3x debug without a failure |
+| MSVC `cl /W4 /WX` C11 `tests/c/consumer.c` against the release static library | PASS: 8946 checks, 0 failures |
+| `tests/cpp/run-cpp-consumer.ps1` | PASS: 653 checks, 0 failures |
+| `tools/check-ffi-exports.sh` logic | not run here (needs Linux `nm -D`); the header still mentions exactly the 26 exported `kl_xxx(` names and lib.rs has 26 `#[no_mangle]` |
+
+NOT run: Miri, ASan/TSan or any sanitizer (not available locally), loom, a 32-bit target build (the 32-bit bit layout, 12 index and
+20 generation bits, is written but untested), or any host binding rebuild (Kotlin, Swift, JNI sources only had comments changed).
+Two parallel-test bugs were found and fixed in the new tests themselves (an index-bit flip of a live token can legitimately alias another
+live object because the tests share the process-global registry); the library behaved correctly. Zeroization on a free that overlaps an
+in-flight call is by design (free waits, then erases) but has no dedicated deterministic test; the existing zeroize tests still pass.
