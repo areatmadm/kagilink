@@ -74,3 +74,17 @@ jobs:
             -Icore/kagilink-ffi/include tests/c/consumer.c \
             target/release/libareatm_kagilink_ffi.a -lpthread -ldl -lm -o consumer-asan
           ./consumer-asan
+  cpp-consumer:
+    # C++20 RAII wrapper (kagilink.hpp) over the C ABI, built with MSVC on Windows (D021).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.92.0 --profile minimal
+      - name: Build library, compile and run the C++ consumer
+        shell: pwsh
+        run: |
+          rustup default 1.92.0
+          ./tests/cpp/run-cpp-consumer.ps1

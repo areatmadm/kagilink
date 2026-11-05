@@ -67,7 +67,16 @@ name = "areatm-kagilink-core-fuzz"
 version = "0.0.0"
 dependencies = [
  "areatm-kagilink-core",
+ "areatm-kagilink-ffi",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "areatm-kagilink-ffi"
+version = "0.0.0"
+dependencies = [
+ "areatm-kagilink-core",
+ "zeroize",
 ]
 
 [[package]]
