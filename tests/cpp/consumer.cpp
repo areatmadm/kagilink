@@ -42,7 +42,10 @@ kagilink::Status establish(Established& e, const std::uint8_t* wrong_first_digit
     st = e.receiver.begin_attempt(m1);
     if (st != Ok) return st;
     Bytes code(e.code.vec());
-    if (wrong_first_digit) code[0] = *wrong_first_digit;
+    if (wrong_first_digit) {
+        // Always differ from this receiver's real first digit (a different receiver's code is not enough).
+        code[0] = (code[0] == *wrong_first_digit) ? (code[0] == '1' ? '2' : '1') : *wrong_first_digit;
+    }
     Sender sender;
     st = Sender::start(code, m1, b("cpp-tx"), b("synthetic-login"), b("claims"), m2, sender);
     if (st != Ok) return st;
@@ -105,13 +108,7 @@ void test_wrong_code_and_tamper() {
     {
         Established e;
         const std::uint8_t digit = '0';
-        // Make sure the substituted digit differs from the real first digit.
-        Receiver probe;
-        SecretBytes real;
-        CHECK(Receiver::create(b("p"), {}, probe) == Ok);
-        CHECK(probe.code(real) == Ok);
-        std::uint8_t wrong = real.vec()[0] == digit ? '1' : digit;
-        CHECK(establish(e, &wrong) == KL_ERR_CONFIRMATION_FAILED);
+        CHECK(establish(e, &digit) == KL_ERR_CONFIRMATION_FAILED);
         CHECK(!static_cast<bool>(e.tx));
     }
     {
