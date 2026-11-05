@@ -36,6 +36,9 @@ echo "== 2/4 JNI shared library"
   -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,-z,max-page-size=16384 -Wl,-z,relro,-z,now \
   -o "$OUT/libkagilink_jni.so"
 
+# Also stage the library where apps/android/peripheral (Gradle) picks it up as a jniLib.
+mkdir -p "$OUT/jniLibs/arm64-v8a" && cp "$OUT/libkagilink_jni.so" "$OUT/jniLibs/arm64-v8a/"
+
 echo "== 3/4 Kotlin"
 JAVA=${JAVA_HOME:+$JAVA_HOME/bin/}java
 CP=$(ls "$KOTLIN_LIB"/kotlin-compiler-embeddable-*.jar "$KOTLIN_LIB"/kotlin-stdlib-*.jar \
@@ -44,7 +47,7 @@ CP=$(ls "$KOTLIN_LIB"/kotlin-compiler-embeddable-*.jar "$KOTLIN_LIB"/kotlin-stdl
 STDLIB=$(ls "$KOTLIN_LIB"/kotlin-stdlib-*.jar | head -1)
 rm -rf "$OUT/classes" && mkdir -p "$OUT/classes"
 "$JAVA" -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect \
-  -jvm-target 11 -cp "$STDLIB" -d "$OUT/classes" "$HERE/src/Native.kt" "$HERE/src/SpikeMain.kt"
+  -jvm-target 11 -cp "$STDLIB" -d "$OUT/classes" "$HERE/binding/Native.kt" "$HERE/src/SpikeMain.kt"
 
 echo "== 4/4 dex"
 rm -rf "$OUT/dex" && mkdir -p "$OUT/dex"

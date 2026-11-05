@@ -173,5 +173,5 @@ only for attempts that already sent M3; (4) crowded places are in scope.
 iPhone 15 Pro measurement (2026-11-06, reported by the macOS session, one run): the local name `KL-XXXX` reached the Windows active scan, the full M1..M4 + SECRET + RESULT exchange completed with a 244-byte chunk cap, iOS reported ATT MTU 515 (`maximumUpdateValueLength` 512) and the Indicate queue-full retry path worked. iOS peripherals only learn of a subscription (not a connection) and cannot disconnect the central, so advertising stops at subscribe and, after an error, the central must drop the link.
 
 Still open: (a) a real measurement that Windows receives the tag as service data (the local-name form is measured on iOS) and merges scan responses; (b) per-attempt address rotation (not controllable on Android, so not relied on); (c) platform implementations of this framing through the
-shared Rust codec over the C ABI (not started); (d) whether the receiver should rate-limit new
+shared Rust codec over the C ABI (the C ABI v2 export exists, D027, tested with synthetic data; no platform uses it yet); (d) whether the receiver should rate-limit new
 connections while several look-alike advertisers keep appearing.
