@@ -2,6 +2,9 @@
 // sends one synthetic SECRET through the shared Rust core. Synthetic data only. Measures MTU,
 // subscribe/queue behaviour and foreground/background advertising. No pairing, no Keychain.
 import CoreBluetooth
+#if FAULT_INJECTION
+import CryptoKit
+#endif
 import Foundation
 import Security
 import SwiftUI
@@ -74,6 +77,9 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         guard !running, manager.state == .poweredOn, codeDigits.utf8.count == 6,
               codeDigits.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else { note("start refused (state/code)"); return }
         code = Array(codeDigits.utf8)
+#if FAULT_INJECTION
+        logSessionFingerprint(code)
+#endif
         reset()
         tag = randomTag()
         let rx = CBMutableCharacteristic(type: rxUUID, properties: [.write], value: nil, permissions: [.writeable])
@@ -90,6 +96,18 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         note("FAULT MODE = \(fault.rawValue) (test build, synthetic data)")
 #endif
     }
+
+#if FAULT_INJECTION
+    /// Test builds only: UTC start time and a short SHA-256 fingerprint of the (synthetic) code, so a phone log line can be
+    /// matched with the PC output. The code itself is never logged. NOTE: 4 hex characters (16 bits) of an unsalted hash
+    /// narrow a six-digit code to about 15 candidates; acceptable only because test codes are synthetic and expire in 60 s.
+    private static let fingerprintHexChars = 4
+    private func logSessionFingerprint(_ digits: [UInt8]) {
+        let stamp = ISO8601DateFormatter().string(from: Date()) // UTC, whole seconds, e.g. 2026-11-06T05:12:33Z
+        let hex = SHA256.hash(data: Data(digits)).map { String(format: "%02x", $0) }.joined()
+        note("FAULT SESSION start=\(stamp) codeHash\(Self.fingerprintHexChars)=\(hex.prefix(Self.fingerprintHexChars))")
+    }
+#endif
 
     func stop(_ why: String) {
         manager.stopAdvertising()
