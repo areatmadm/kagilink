@@ -11,6 +11,13 @@ struct SpikeApp: App {
             VStack(alignment: .leading, spacing: 12) {
                 Text("KL-V1 peripheral spike (synthetic)").font(.headline)
                 Text("KL-\(spike.tag)").font(.system(size: 48, weight: .bold, design: .monospaced))
+#if FAULT_INJECTION
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("FAULT TEST BUILD — mode: \(spike.fault.rawValue)").font(.caption.bold()).foregroundStyle(.red)
+                    Picker("Fault mode", selection: $spike.fault) { ForEach(FaultMode.allCases) { Text($0.rawValue).tag($0) } }
+                        .pickerStyle(.menu).disabled(spike.running)
+                }
+#endif
                 TextField("6-digit code from the receiver", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
                 HStack {
                     Button("Start") { spike.start(codeDigits: code); code = "" }.disabled(spike.running || code.count != 6)
