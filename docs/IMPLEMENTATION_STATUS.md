@@ -169,6 +169,15 @@ aarch64 qemu job, within the limits above. The iOS simulator was deliberately no
 | CI (core-hardening.yml `c-consumer`): gcc `-std=c11 -Wall -Wextra -Wpedantic -Werror`, then the same program with AddressSanitizer and UBSan on the C side | PASS (both runs, 71 checks each) |
 | What this does not show | Swift, JNI or C++ consumers; the Rust side is not sanitized in the ASan run; FFI functions are not fuzzed; no independent review of the `unsafe` code |
 
+### Windows C++ consumer and FFI fuzzing addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `core/kagilink-ffi/include/kagilink.hpp` (C++20 RAII wrapper: wiped `SecretBytes`, owning Receiver/Sender/Channel, grow-and-retry buffers) with `tests/cpp/consumer.cpp`, MSVC `/W4 /WX /std:c++20` | PASS locally and in CI (`cpp-consumer`, windows-latest): 55 checks, 0 failures; includes a 3000-byte message that exercises the held-message and retry paths, wrong code, tamper, and move semantics |
+| Fuzz target `ffi_calls` (new): drives the C ABI exports with arbitrary bytes, lengths and output capacities; asserts no export ever returns KL_ERR_PANIC and that fuzz bytes never complete a handshake or authenticate | First run FAILED with LeakSanitizer reports. Cause was the fuzz harness: it did not free the sender and receiver handle shells of its channel section (a host duty per kagilink.h), not the library. Fixed in the harness |
+| 300 s rerun of all four targets (GitHub-hosted, nightly-2026-11-01, ASan) | PASS: hello_decode 128,067,057; handshake_messages 2,297,091; channel_fragments 420,589; ffi_calls 388,564 executions; no crash, assertion failure or sanitizer report |
+| What this does not show | The `ffi_calls` target is small and shallow compared with the others; the harness uses `unsafe` itself; 5-minute runs without a saved corpus are a smoke level; no independent review of the FFI `unsafe` code |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;
