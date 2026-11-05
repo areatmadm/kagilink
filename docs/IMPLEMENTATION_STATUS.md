@@ -126,6 +126,25 @@ fragment size could exceed the 256-fragment limit); no implementation change.
 | 900 s run per target | PASS: hello_decode 224,382,468; handshake_messages 5,384,071; channel_fragments 1,227,815 executions; no crash, no assertion failure, no sanitizer report |
 | What this does not show | 15 minutes per target is small. The corpus is not saved between runs, no coverage report was reviewed, and fuzzing finds crashes and violated assertions, not logic or side-channel flaws. FFI functions are not fuzzed yet. The fuzz lockfile resolves some transitive versions independently of the root lockfile |
 
+### Apple target verification addendum — 2026-11-05 (reported by the macOS session)
+
+Results below were produced and reported by the macOS session on the MacBook; the lead session did
+not re-run them. Synthetic data only.
+
+| Check | Reported outcome |
+|---|---|
+| macOS native `cargo test --workspace --locked` (rustc 1.92.0, commit 7383359) | PASS: 104 tests, 0 failures |
+| Release build of core and FFI for aarch64-apple-ios and aarch64-apple-ios-sim | PASS (build only) |
+| Core test binaries (29 unit, 38 handshake, 10 mutation) installed and run on a physical iPhone 15 Pro, signed with an existing team development certificate through a temporary app; temporary app removed afterwards | PASS (reported) |
+| iOS simulator `simctl spawn` run | NOT RUN (interrupted) |
+| Not covered on the iPhone | the 7 CPace draft vectors, the 11 model tests, the 9 FFI tests, and any BLE, Secure Enclave or Keychain behaviour |
+
+Signing side effects, unverified: the session ran `xcodebuild -allowProvisioningUpdates` and Xcode
+fetched a wildcard development provisioning profile; the session could not tell whether that profile
+was newly created or already existed, or whether the device registration changed. No certificate was
+issued and no project file was edited. The project's `CODE_SIGNING_ALLOWED = NO` change is still not
+started. The owner should check the Apple developer account for any new profile or device entry.
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;
