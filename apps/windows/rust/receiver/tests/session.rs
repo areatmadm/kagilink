@@ -115,3 +115,24 @@ fn consumed_code_cannot_be_reused() {
     let (r, _) = attempt(&mut rx, &code, Behaviour::Honest, 64, false);
     assert!(matches!(r, Err(SessionError::Core(_))));
 }
+
+#[test]
+fn abandoned_attempt_after_m3_shows_in_the_open_count_before_it_is_counted() {
+    let (mut rx, code) = new_rx();
+    let (r, _) = attempt(&mut rx, &code, Behaviour::DropAfterM3, 64, false);
+    assert!(r.is_err());
+    assert_eq!(
+        rx.failures(),
+        0,
+        "counted only when the next attempt begins (D026)"
+    );
+    assert_eq!(rx.failures_including_open(), 1);
+    let (r, _) = attempt(&mut rx, &code, Behaviour::GarbageM2, 64, false);
+    assert!(r.is_err());
+    assert_eq!(rx.failures(), 1, "the abandoned attempt is counted now");
+    assert_eq!(
+        rx.failures_including_open(),
+        1,
+        "a garbage M2 costs nothing"
+    );
+}

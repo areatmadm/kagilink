@@ -152,6 +152,13 @@ impl ReceiverSession {
         self.failures
     }
 
+    /// Failures counted so far plus one if an attempt is open AFTER M3 was sent: such an attempt
+    /// is counted when the next attempt begins (D026), so this is what the budget will read next.
+    pub fn failures_including_open(&self) -> u8 {
+        let open = matches!(&self.attempt, Some(a) if matches!(a.stage, Stage::AwaitM4(_)));
+        self.failures.saturating_add(u8::from(open))
+    }
+
     /// Evaluates expiry; true only while the code can still be used.
     pub fn is_active(&mut self) -> bool {
         self.check_live().is_ok()

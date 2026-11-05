@@ -641,3 +641,21 @@ Windows side of the two Android runs (owner-run `ble-receive`, pick row 1, outpu
 "Transfer OK: 30 bytes received in 1 fragments" (tags in the list showed signal Medium for the first run and Weak for the second).
 The mapping of each output to Indicate or Notify+ACK was not stated. With this, the Android retest is confirmed on both ends:
 PC output and phone log agree (30 B received on the PC, 11 B RESULT on the phone). Still one run per mode.
+
+### Fault injection on the real radio: iPhone 15 Pro to Windows receiver, 2026-11-06 (reported)
+
+Test-only fault modes (PR #21, compiled only with `FAULT_INJECTION=1`) against the Windows `ble-receive` before this change; owner supplied
+the PC output, the macOS session compared it with the phone log. Results: garbage M2 -> `Core(WrongState)` (a wrong-type message fails
+before M3, so it is free under D026); M4 with one bit flipped -> `Core(ConfirmationFailed)`; drop after M3 -> `Link(Disconnected)`;
+duplicate, skipped (twice) and reordered chunk -> `Core(Framing)` (4 runs); tampered SECRET fragment -> `Core(Authentication)`, no
+"Transfer OK"; M2 delayed 6 s -> TRANSFER OK. The last one is not a defect: the receiver waits up to 10 s for the first chunk of a
+handshake message (`FIRST_CHUNK_WAIT`, the phone runs CPace) and the 5 s limit applies from the FIRST chunk; the expectation in the test
+request was wrong. The spec now says so (section 6); a delay of more than 10 s is the timeout case and is NOT yet tested on a radio.
+The PC took about 3.1-3.3 s to drop the link after an error (the phone saw "central unsubscribed" each time). The failure budget was
+NOT visible in the PC output, so the expected counts (0 for garbage M2, 1 for tampered M4 and dropped-after-M3) were not verified on the
+radio. Change in this PR: `ble-receive` prints "Failure budget used: n/3" after every attempt (a new core getter,
+`failures_including_open`, includes an attempt abandoned after M3 that is counted when the next attempt begins), and after a failed attempt
+it offers to retry with the SAME code, so the budget can be checked across attempts. The GATT session is now released on disconnect
+(SetMaintainConnection(false) + Close), which may shorten the 3 s drop; UNVERIFIED on a radio. Android fault modes (PR #22) are installed and
+not yet run. Android's fault code is runtime-gated by the debuggable flag (present in release builds, disabled there); it must become
+compile-time-gated before any product build.
