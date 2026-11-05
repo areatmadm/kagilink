@@ -15,7 +15,7 @@ private let syntheticSecret = Array("synthetic-spike-secret-0123456789".utf8)
 #if FAULT_INJECTION
 /// Test-only fault injection (build with FAULT_INJECTION=1). Off by default; never compiled into the normal build.
 enum FaultMode: String, CaseIterable, Identifiable {
-    case none, garbageM2, tamperM4, dropAfterM3, dupChunk, skipChunk, reorderChunk, delayM2, tamperSecret
+    case none, garbageM2, tamperM4, dropAfterM3, dupChunk, skipChunk, reorderChunk, delayM2, delayM2Long, tamperSecret
     var id: String { rawValue }
     /// Chunk faults need a multi-chunk message, so M2 is sent in small chunks.
     var usesSmallChunks: Bool { self == .dupChunk || self == .skipChunk || self == .reorderChunk }
@@ -217,11 +217,14 @@ final class PeripheralSpike: NSObject, ObservableObject, CBPeripheralManagerDele
         case .garbageM2:
             note("FAULT garbageM2: sending 40 garbage bytes instead of M2")
             try send(Codec.mtypeHandshake, [UInt8](repeating: 0xA5, count: 40))
-        case .delayM2:
-            note("FAULT delayM2: holding M2 for 6 s (receiver limit is 5 s)")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+        case .delayM2, .delayM2Long:
+            // The receiver waits up to 10 s for a first chunk (FIRST_CHUNK_WAIT): 6 s is still accepted by design,
+            // 11 s must time out.
+            let seconds: Double = fault == .delayM2Long ? 11 : 6
+            note("FAULT \(fault.rawValue): holding M2 for \(Int(seconds)) s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
                 guard let self, self.running else { return }
-                self.note("FAULT delayM2: sending the late M2 now")
+                self.note("FAULT \(self.fault.rawValue): sending the late M2 now")
                 try? self.send(Codec.mtypeHandshake, m2)
             }
         case .dupChunk, .skipChunk, .reorderChunk:
