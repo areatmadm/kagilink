@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod ble_frame;
 pub mod clock;
 pub mod code;
 pub mod error;

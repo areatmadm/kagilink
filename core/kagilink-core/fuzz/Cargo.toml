@@ -39,3 +39,9 @@ name = "ffi_calls"
 path = "fuzz_targets/ffi_calls.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "ble_frames"
+path = "fuzz_targets/ble_frames.rs"
+test = false
+doc = false

@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [hello_decode, handshake_messages, channel_fragments, ffi_calls]
+        target: [hello_decode, handshake_messages, channel_fragments, ffi_calls, ble_frames]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:

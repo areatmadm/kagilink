@@ -498,3 +498,18 @@ compromised PC that says it has none, so (c) is reachable by anyone controlling 
 block in (b) mainly catches faults, not an attacker. The TPM check therefore is a trust signal for
 honest setups, not a security boundary, consistent with D023 (no duty to detect compromise). AGENTS.md
 keeps its RAM-only allowance and gets a pointer to this policy.
+
+
+## D025 — BLE/GATT mapping draft and framing codec, 2026-11-06
+
+Owner asked for the GATT specification. The lead session drafted docs/BLE_GATT_SPEC.md (framing v1)
+and implemented its chunk codec in `core/kagilink-core/src/ble_frame.rs` (shared with the phones
+through the C ABI later). Draft choices: receiver = Central, sender = Peripheral advertising only
+after the user starts it; one service with two characteristics (RX write-with-response, TX indicate);
+no reliance on BLE pairing/bonding/encryption (all security is application layer); strict in-order
+chunk framing with a 2-byte header and a 3-byte first-chunk prefix, messages up to 512 bytes, working
+at the 23-byte minimum MTU; one connection, 60 s session bound, any error drops the connection; no
+code-derived advertising data. Fresh random UUIDs replace the Phase 0 diagnostic UUIDs, which must not
+become production. Status: DRAFT. Verified so far: the codec's local synthetic tests only. Open
+questions listed in section 9 of the spec (Indicate vs Notify fallback, address rotation, optional
+display tag for choosing between several senders, platform implementations).

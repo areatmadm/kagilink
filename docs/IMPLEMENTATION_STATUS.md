@@ -214,6 +214,15 @@ input sometimes works; no Microsoft statement about SendInput into an mstsc sess
 this means RDP and credential-dialog input must stay unsupported (AGENTS.md) until evidence from a real
 Remote Desktop target exists.
 
+### BLE/GATT framing draft addendum — 2026-11-06
+
+| Check | Actual outcome |
+|---|---|
+| docs/BLE_GATT_SPEC.md (D025) written | DRAFT, not reviewed by the platform sessions, not tested on devices |
+| `ble_frame` codec: 10 unit tests (all message lengths 1..512 over chunk sizes 6..512, back-to-back messages, duplicate/gap/reorder, missing/double FIRST, reserved bits, unknown type, zero/oversize length, LAST flag/length disagreement, structural mutations); fmt, clippy -D warnings, cargo deny | PASS |
+| New fuzz target `ble_frames` added to fuzz.yml | Compiles; NOT RUN yet (needs a manual dispatch of the fuzz workflow) |
+| Real-device checks (MTU 23 and negotiated, Indicate delivery/order, disconnects, two advertisers, wrong code, 60 s expiry, Windows GattSession) | NOT RUN |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;

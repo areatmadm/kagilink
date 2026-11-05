@@ -8,7 +8,7 @@ are met. No mock event constitutes cryptographic authentication. Phase 0 model f
 are NOT a wire specification. PHASE0_BLE_PROBE.md defines a separate fixed-public-value
 diagnostic service only. Its UUIDs and unauthenticated messages MUST NOT be used for
 production data or treated as this protocol's handshake, confirmation or approved
-transfer. The BLE/ATT mapping of the messages below is not yet defined (Phase 2).
+transfer. The BLE/ATT mapping of the messages below is drafted in BLE_GATT_SPEC.md (D025, unverified on real devices).
 
 ## Roles and code
 
