@@ -5,7 +5,15 @@ package com.areatm.kagilink.spike
  * Binding spike (D021), synthetic data only. Handles are opaque Longs (0 = NULL). Secrets travel
  * as ByteArray, never String; callers must wipe them with [secureWipe] after use.
  * Array-length conventions: `outLen[0]` is the capacity offered on entry and the written/required
- * length on return; a null output array with outLen[0] = 0 is a size query.
+ * length on return; a null output array with outLen[0] = 0 is a size query. outLen[0] is written
+ * only meaningfully on OK (bytes written) and ERR_BUFFER (bytes required); on any other status it
+ * is set to 0 and the output array is untouched.
+ *
+ * Handle ownership: every `*Free` MUST be exclusive. Never call it concurrently with another call
+ * on the same handle and never twice. Wrap each handle in an owner that releases it exactly once,
+ * for example `val h = AtomicLong(raw)` and `val prev = h.getAndSet(0); if (prev != 0L) free(prev)`
+ * once no other thread can be inside a call on it. Use-after-free is undefined behaviour, not an
+ * error code (docs/FFI_DESIGN.md: a handle table is required before real secrets).
  */
 object Native {
     const val EXPECTED_ABI = 2

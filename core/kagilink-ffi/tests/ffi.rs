@@ -1031,3 +1031,119 @@ fn frame_constants_match_core() {
     assert_eq!(bf::MIN_CHUNK, 6);
     assert_eq!(bf::MAX_CHUNK, 512);
 }
+
+#[test]
+fn closed_channel_refuses_approval_readiness_and_held_plaintext() {
+    unsafe {
+        let (r, s, rx, tx) = handshake();
+        assert_eq!(kl_channel_set_ready_to_receive(rx, 1), KL_OK);
+
+        // Complete a message into the held state (buffer too small).
+        let pt = b"synthetic-held-plaintext";
+        assert_eq!(kl_channel_approve_one_transfer(tx), KL_OK);
+        let (packed, count) = seal(tx, SECRET, pt, 256);
+        assert_eq!(count, 1);
+        let frag = &packed[4..];
+        let mut tiny = [0u8; 2];
+        let mut tn = tiny.len();
+        let (mut kind, mut done) = (0u8, 0u8);
+        assert_eq!(
+            kl_channel_open_fragment(
+                rx,
+                frag.as_ptr(),
+                frag.len(),
+                tiny.as_mut_ptr(),
+                &mut tn,
+                &mut kind,
+                &mut done
+            ),
+            KL_ERR_BUFFER
+        );
+        assert_eq!(tn, pt.len());
+
+        // Close, then try to collect the held message: must be refused and nothing written.
+        assert_eq!(kl_channel_close(rx), KL_OK);
+        let mut plain = vec![0u8; 64];
+        let mut pn = plain.len();
+        assert_eq!(
+            kl_channel_open_fragment(
+                rx,
+                null(),
+                0,
+                plain.as_mut_ptr(),
+                &mut pn,
+                &mut kind,
+                &mut done
+            ),
+            KL_ERR_CLOSED
+        );
+        assert_eq!((done, plain.iter().all(|&b| b == 0)), (0, true));
+        pn = plain.len();
+        assert_eq!(
+            kl_channel_open_fragment(
+                rx,
+                null(),
+                0,
+                plain.as_mut_ptr(),
+                &mut pn,
+                &mut kind,
+                &mut done
+            ),
+            KL_ERR_CLOSED
+        );
+        assert!(plain.iter().all(|&b| b == 0));
+
+        assert_eq!(kl_channel_is_closed(rx), 1);
+        assert_eq!(kl_channel_approve_one_transfer(rx), KL_ERR_CLOSED);
+        assert_eq!(kl_channel_set_ready_to_receive(rx, 1), KL_ERR_CLOSED);
+        // Closing is idempotent and NULL is still an error.
+        assert_eq!(kl_channel_close(rx), KL_OK);
+        assert_eq!(kl_channel_approve_one_transfer(null_mut()), KL_ERR_NULL);
+        assert_eq!(kl_channel_set_ready_to_receive(null_mut(), 1), KL_ERR_NULL);
+
+        kl_channel_free(tx);
+        kl_channel_free(rx);
+        kl_sender_free(s);
+        kl_receiver_free(r);
+    }
+}
+
+#[test]
+fn freeing_with_held_data_and_null_is_safe() {
+    unsafe {
+        kl_channel_free(null_mut());
+        kl_reassembler_free(null_mut());
+        // Reassembler freed while a completed message is still held.
+        let h = new_reasm();
+        let chunks = frame(1, &frame_msg(10), 244).unwrap();
+        for c in &chunks {
+            assert_eq!(push(h, c).0, KL_OK);
+        }
+        kl_reassembler_free(h);
+        // Channel freed while a completed message is still held.
+        let (r, s, rx, tx) = handshake();
+        assert_eq!(kl_channel_set_ready_to_receive(rx, 1), KL_OK);
+        assert_eq!(kl_channel_approve_one_transfer(tx), KL_OK);
+        let (packed, _) = seal(tx, SECRET, b"synthetic", 256);
+        let frag = &packed[4..];
+        let mut tiny = [0u8; 1];
+        let mut tn = 1usize;
+        let (mut kind, mut done) = (0u8, 0u8);
+        assert_eq!(
+            kl_channel_open_fragment(
+                rx,
+                frag.as_ptr(),
+                frag.len(),
+                tiny.as_mut_ptr(),
+                &mut tn,
+                &mut kind,
+                &mut done
+            ),
+            KL_ERR_BUFFER
+        );
+        kl_channel_free(rx);
+        kl_channel_free(tx);
+        kl_sender_free(s);
+        kl_receiver_free(r);
+    }
+}

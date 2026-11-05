@@ -36,6 +36,15 @@ Opaque pointers, created and freed only through the library:
   failure, mirroring `handle_m3(self, ..)`.
 - Handles are not thread-safe. Each handle is used from one thread at a time; the library
   guards with a mutex and returns `KL_ERR_BUSY` on concurrent entry instead of blocking.
+- A free MUST be exclusive: never concurrent with any other call on the same handle, never
+  twice. `KL_ERR_BUSY` only covers concurrent NON-free calls; the library cannot detect a stale
+  or doubly freed pointer. Host wrappers own each handle exactly once (Kotlin
+  `AtomicLong.getAndSet(0)`, Swift `deinit` of the sole owner, C++ `std::unique_ptr`).
+  **REQUIRED before real secrets (not implemented now, independent review finding):** a
+  library-side handle table with generation tokens (opaque 64-bit ids instead of raw pointers) so
+  that use-after-free, double free and free-versus-call races become error codes instead of
+  undefined behaviour. That is an ABI change (ABI v3).
+- Input and output buffers of one call must not overlap (documented, not checked).
 
 ## Data across the boundary
 

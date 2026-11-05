@@ -5,13 +5,25 @@
  * Conventions
  *  - Opaque handles are created and freed only by this library. *_free(NULL) is a no-op.
  *    A freed handle must not be used again.
+ *  - A free MUST be exclusive: never concurrent with ANY other call on the same handle, and
+ *    never twice for the same handle. The library cannot detect a double free or a use after
+ *    free (handles are plain pointers): that is undefined behaviour, not an error code. Host
+ *    wrappers must therefore own each handle exactly once and release it exactly once, e.g.
+ *    Kotlin: AtomicLong.getAndSet(0) and free only a non-zero previous value (then ensure no
+ *    other thread is inside a call on it); Swift: free in the owning class deinit (the last
+ *    reference, so no call can be in flight); C++: std::unique_ptr with a deleter, move-only.
+ *    A library-side handle table with generation tokens is required before real secrets are
+ *    handled (docs/FFI_DESIGN.md).
  *  - Output buffers: `uint8_t* out, size_t* out_len`. *out_len is the capacity on entry and
  *    the written length on success. If too small the call returns KL_ERR_BUFFER, sets
  *    *out_len to the required size, writes nothing and consumes no protocol state. `out` may
  *    be NULL with *out_len == 0 for a size query. Outputs are written only on success.
  *  - Inputs: a NULL pointer is accepted only with length 0. Lengths above 1 MiB are rejected
  *    (KL_ERR_LIMITS).
- *  - Handles are single-threaded; a concurrent call returns KL_ERR_BUSY (never blocks).
+ *  - Handles are single-threaded; a concurrent non-free call returns KL_ERR_BUSY (never
+ *    blocks). KL_ERR_BUSY does NOT cover a call racing with a free of the same handle.
+ *  - Buffers passed as an input and as an output in the same call must not overlap, and an
+ *    output buffer must not alias another output (the library does not check this).
  *  - KL_ERR_PANIC means an internal panic was caught: discard the handle.
  *  - No function logs, calls back, or returns error text. Never place real credentials
  *    through this API before the project's review gates are met.
@@ -94,7 +106,9 @@ kl_status_t kl_receiver_new(const uint8_t* device_id, size_t device_id_len,
  * Display only while active; wipe the host copy afterwards. */
 kl_status_t kl_receiver_code(kl_receiver_t* r, uint8_t* out, size_t* out_len);
 
-/* Start an attempt; writes M1. A still-open earlier attempt counts as a failure. */
+/* Start an attempt; writes M1. A still-open earlier attempt counts as a failure only if M3 was
+ * already sent for it (a guess could have been tested, D026); an earlier attempt that never got
+ * that far is dropped without cost. */
 kl_status_t kl_receiver_begin_attempt(kl_receiver_t* r, uint8_t* out_m1, size_t* out_len);
 
 /* Process M2 from the sender; writes M3. */
@@ -102,7 +116,9 @@ kl_status_t kl_receiver_handle_m2(kl_receiver_t* r, const uint8_t* m2, size_t m2
                                   uint8_t* out_m3, size_t* out_len);
 
 /* Verify M4. On success the code is consumed and *out_channel is a new channel; on any
- * failure *out_channel is NULL and a failure is counted. */
+ * failure *out_channel is NULL. A failure is counted only where D026 counts one: a bad or
+ * malformed M4 after M3 was sent. KL_ERR_WRONG_STATE (no M3 sent yet), KL_ERR_EXPIRED,
+ * KL_ERR_NULL and KL_ERR_BUSY cost nothing. At three failures the code is destroyed. */
 kl_status_t kl_receiver_finish(kl_receiver_t* r, const uint8_t* m4, size_t m4_len,
                                kl_channel_t** out_channel);
 
@@ -134,10 +150,12 @@ void kl_sender_free(kl_sender_t* s);
 
 /* ---- Channel ---- */
 
-/* Sender: allow exactly one SECRET seal. Call only after the platform's own user approval. */
+/* Sender: allow exactly one SECRET seal. Call only after the platform's own user approval.
+ * KL_ERR_CLOSED on a closed or expired channel (no approval is recorded). */
 kl_status_t kl_channel_approve_one_transfer(kl_channel_t* c);
 
-/* Receiver: nonzero = a verified safe input target exists; 0 withdraws readiness. */
+/* Receiver: nonzero = a verified safe input target exists; 0 withdraws readiness.
+ * KL_ERR_CLOSED on a closed or expired channel. */
 kl_status_t kl_channel_set_ready_to_receive(kl_channel_t* c, uint8_t ready);
 
 /* Encrypt and fragment one message (1..4096 bytes). `out` receives repeated
@@ -154,7 +172,9 @@ kl_status_t kl_channel_seal(kl_channel_t* c, uint8_t kind,
  * otherwise 0 and *out_len is 0. Any protocol error closes the channel. If a completed
  * message does not fit, KL_ERR_BUFFER is returned with the required size and the message is
  * held inside the channel: call again with fragment_len == 0 and a larger buffer (a
- * non-empty fragment while a message is held closes the channel). Wipe out_plain after use. */
+ * non-empty fragment while a message is held closes the channel). A held message is never
+ * released from a closed or expired channel: that call returns KL_ERR_CLOSED and the held
+ * plaintext is erased. Wipe out_plain after use. */
 kl_status_t kl_channel_open_fragment(kl_channel_t* c, const uint8_t* fragment,
                                      size_t fragment_len,
                                      uint8_t* out_plain, size_t* out_len,
@@ -163,7 +183,8 @@ kl_status_t kl_channel_open_fragment(kl_channel_t* c, const uint8_t* fragment,
 /* Close, erase keys and any partial/held data. */
 kl_status_t kl_channel_close(kl_channel_t* c);
 
-/* 1 if closed, NULL, busy or unusable; 0 if open. */
+/* 1 if closed, NULL, busy or unusable; 0 if open. Evaluates the 60 s deadline: an expired
+ * channel is closed (keys erased) and reported as 1. Not a liveness or peer-presence check. */
 uint8_t kl_channel_is_closed(kl_channel_t* c);
 
 void kl_channel_free(kl_channel_t* c);

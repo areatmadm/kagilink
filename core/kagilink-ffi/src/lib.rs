@@ -26,7 +26,7 @@ use areatm_kagilink_core::transport::{
 use areatm_kagilink_core::wire::{NONCE_LEN, SHARE_LEN, SID_LEN, SUITE, TAG_LEN};
 use areatm_kagilink_core::{os_rng, Code, Error, ReceiverSession, SenderPending, SystemClock};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use zeroize::Zeroize;
 
 /// ABI version returned by [`kl_abi_version`]. Bumped on any signature change.
@@ -171,6 +171,31 @@ fn lock<T>(m: &Mutex<T>) -> Res<MutexGuard<'_, T>> {
         Ok(g) => Ok(g),
         Err(TryLockError::WouldBlock) => Err(KL_ERR_BUSY),
         Err(TryLockError::Poisoned(_)) => Err(KL_ERR_PANIC),
+    }
+}
+
+/// Like `lock` but a poisoned mutex is recovered (never blocks): used only on close/zeroize
+/// paths so that secrets are still erased after a panic.
+fn lock_for_wipe<T>(m: &Mutex<T>) -> Res<MutexGuard<'_, T>> {
+    match m.try_lock() {
+        Ok(g) => Ok(g),
+        Err(TryLockError::WouldBlock) => Err(KL_ERR_BUSY),
+        Err(TryLockError::Poisoned(p)) => Ok(p.into_inner()),
+    }
+}
+
+impl ChannelState {
+    /// Close the channel and erase any held plaintext.
+    fn close_and_wipe(&mut self) {
+        self.held = None; // `Message` plaintext is `Zeroizing`
+        self.ch.close();
+    }
+
+    /// Drop held plaintext if the channel is (or just became) closed.
+    fn wipe_held_if_closed(&mut self) {
+        if self.ch.is_closed() {
+            self.held = None;
+        }
     }
 }
 
@@ -568,7 +593,12 @@ pub unsafe extern "C" fn kl_channel_approve_one_transfer(c: *mut kl_channel_t) -
     run(|| {
         // SAFETY: validated by `handle`.
         let c = unsafe { handle(c)? };
-        lock(&c.inner)?.ch.approve_one_transfer();
+        let mut g = lock(&c.inner)?;
+        if g.ch.poll_closed() {
+            g.held = None;
+            return Err(KL_ERR_CLOSED);
+        }
+        g.ch.approve_one_transfer();
         Ok(())
     })
 }
@@ -585,7 +615,12 @@ pub unsafe extern "C" fn kl_channel_set_ready_to_receive(
     run(|| {
         // SAFETY: validated by `handle`.
         let c = unsafe { handle(c)? };
-        lock(&c.inner)?.ch.set_ready_to_receive(ready != 0);
+        let mut g = lock(&c.inner)?;
+        if g.ch.poll_closed() {
+            g.held = None;
+            return Err(KL_ERR_CLOSED);
+        }
+        g.ch.set_ready_to_receive(ready != 0);
         Ok(())
     })
 }
@@ -639,7 +674,9 @@ pub unsafe extern "C" fn kl_channel_seal(
             }
         };
         let mut g = lock(&c.inner)?;
-        let frags = g.ch.seal(kind, pt, max_fragment_payload)?;
+        let sealed = g.ch.seal(kind, pt, max_fragment_payload);
+        g.wipe_held_if_closed(); // expiry / counter exhaustion close the channel
+        let frags = sealed?;
         let mut packed = Vec::with_capacity(frags.len() * 8);
         for f in &frags {
             let l = u32::try_from(f.len()).map_err(|_| KL_ERR_LIMITS)?;
@@ -647,12 +684,12 @@ pub unsafe extern "C" fn kl_channel_seal(
             packed.extend_from_slice(f);
         }
         let Some(ob) = ob else {
-            g.ch.close();
+            g.close_and_wipe();
             return Err(KL_ERR_PANIC);
         };
         // SAFETY: ob validated.
         if let Err(e) = unsafe { ob.put(&packed) } {
-            g.ch.close(); // precheck mismatch: counter already used, fail closed
+            g.close_and_wipe(); // precheck mismatch: counter already used, fail closed
             return Err(e);
         }
         // SAFETY: out_count validated non-null above, caller-writable.
@@ -691,13 +728,21 @@ pub unsafe extern "C" fn kl_channel_open_fragment(
         let mut g = lock(&c.inner)?;
 
         let msg = if let Some(held) = g.held.take() {
+            // A closed or expired channel never releases a completed plaintext.
+            if g.ch.poll_closed() {
+                drop(held); // zeroized on drop
+                return Err(KL_ERR_CLOSED);
+            }
             if !frag.is_empty() {
-                g.ch.close();
+                drop(held);
+                g.close_and_wipe();
                 return Err(KL_ERR_FRAMING);
             }
             held
         } else {
-            match g.ch.open_fragment(frag) {
+            let opened = g.ch.open_fragment(frag);
+            g.wipe_held_if_closed();
+            match opened {
                 Ok(Some(m)) => m,
                 Ok(None) => {
                     // SAFETY: out_len validated non-null.
@@ -735,14 +780,15 @@ pub unsafe extern "C" fn kl_channel_close(c: *mut kl_channel_t) -> kl_status_t {
     run(|| {
         // SAFETY: validated by `handle`.
         let c = unsafe { handle(c)? };
-        let mut g = lock(&c.inner)?;
-        g.held = None;
-        g.ch.close();
+        // Poisoned mutexes are recovered so keys and held data are still erased.
+        let mut g = lock_for_wipe(&c.inner)?;
+        g.close_and_wipe();
         Ok(())
     })
 }
 
-/// 1 if the channel is closed, expired-closed, NULL, busy or otherwise unusable; 0 if open.
+/// 1 if the channel is closed, expired (the 60 s deadline is evaluated; an expired channel is
+/// closed on the spot), NULL, busy or otherwise unusable; 0 if open.
 ///
 /// # Safety
 /// `c` live handle or NULL.
@@ -754,7 +800,11 @@ pub unsafe extern "C" fn kl_channel_is_closed(c: *mut kl_channel_t) -> u8 {
             return 1;
         };
         match lock(&c.inner) {
-            Ok(g) => u8::from(g.ch.is_closed()),
+            Ok(mut g) => {
+                let closed = g.ch.poll_closed();
+                g.wipe_held_if_closed();
+                u8::from(closed)
+            }
             Err(_) => 1,
         }
     }))
@@ -769,8 +819,15 @@ pub unsafe extern "C" fn kl_channel_is_closed(c: *mut kl_channel_t) -> u8 {
 pub unsafe extern "C" fn kl_channel_free(c: *mut kl_channel_t) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if !c.is_null() {
-            // SAFETY: created by Box::into_raw in new_channel; freed once (caller contract).
-            drop(unsafe { Box::from_raw(c) });
+            // SAFETY: created by Box::into_raw in new_channel; freed once, with no concurrent
+            // call on the handle (caller contract, see kagilink.h).
+            let mut b = unsafe { Box::from_raw(c) };
+            // Exclusive ownership: no lock needed, and a poisoned mutex is still wiped.
+            b.inner
+                .get_mut()
+                .unwrap_or_else(PoisonError::into_inner)
+                .close_and_wipe();
+            drop(b);
         }
     }));
 }
@@ -941,12 +998,13 @@ pub unsafe extern "C" fn kl_reassembler_is_dead(h: *mut kl_reassembler_t) -> u8 
 pub unsafe extern "C" fn kl_reassembler_free(h: *mut kl_reassembler_t) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if !h.is_null() {
-            // SAFETY: created by Box::into_raw in kl_reassembler_new; freed once (caller contract).
-            let b = unsafe { Box::from_raw(h) };
-            if let Ok(mut g) = b.inner.lock() {
-                if let Some((_, d)) = g.held.as_mut() {
-                    d.zeroize();
-                }
+            // SAFETY: created by Box::into_raw in kl_reassembler_new; freed once, with no
+            // concurrent call on the handle (caller contract, see kagilink.h).
+            let mut b = unsafe { Box::from_raw(h) };
+            // Exclusive ownership: never blocks; a poisoned mutex is still wiped.
+            let g = b.inner.get_mut().unwrap_or_else(PoisonError::into_inner);
+            if let Some((_, d)) = g.held.as_mut() {
+                d.zeroize();
             }
             drop(b);
         }

@@ -338,6 +338,15 @@ impl SecureChannel {
         self.closed
     }
 
+    /// Like [`Self::is_closed`] but also evaluates the 60 s deadline: an expired channel is
+    /// closed (keys erased) and reported as closed.
+    pub fn poll_closed(&mut self) -> bool {
+        if !self.closed {
+            let _ = self.check_deadline();
+        }
+        self.closed
+    }
+
     #[cfg(test)]
     fn set_counters(&mut self, send: u64, recv: u64) {
         self.send_seq = send;
@@ -624,6 +633,20 @@ mod tests {
         assert_eq!(a.seal(kind::CONTROL, b"x", 20).err(), Some(Error::Expired));
         assert!(a.is_closed());
         assert_eq!(a.seal(kind::CONTROL, b"x", 20).err(), Some(Error::Closed));
+    }
+
+    #[test]
+    fn poll_closed_evaluates_the_deadline() {
+        let (mut a, _b, clock) = pair();
+        assert!(!a.poll_closed());
+        clock.advance(DEADLINE - 1);
+        assert!(!a.poll_closed());
+        assert!(!a.is_closed());
+        clock.advance(1);
+        assert!(!a.is_closed()); // plain query does not look at the clock
+        assert!(a.poll_closed());
+        assert!(a.is_closed());
+        assert!(a.keys_are_zero());
     }
 
     #[test]

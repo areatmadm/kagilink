@@ -124,6 +124,8 @@ void test_wrong_code_and_tamper() {
         CHECK(!complete);
         CHECK(e.rx.is_closed());
         CHECK(plain.vec().empty());
+        CHECK(e.rx.approve_one_transfer() == KL_ERR_CLOSED);
+        CHECK(e.rx.set_ready_to_receive(true) == KL_ERR_CLOSED);
     }
 }
 

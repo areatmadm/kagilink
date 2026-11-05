@@ -571,3 +571,25 @@ Workspace: 150 tests pass, clippy `-D warnings` clean. The fake phone proves dri
 | Fuzz target `ffi_calls` extended with the codec calls | type-checks (`cargo check` on the fuzz crate); NOT fuzzed (needs the pinned nightly and cargo-fuzz in CI) |
 | Swift binding, Android JNI shim | NOT updated or rebuilt: they do not wrap the new functions yet; the Swift package reads the header ABI constant, the Android spike constant was bumped, neither re-run on a device |
 | Real BLE use of the codec API | NOT tested; independent review of the new `unsafe` still outstanding |
+
+### Independent review of the FFI crate and bindings (2026-11-06)
+
+Verdict: acceptable for synthetic-data spikes only. NOT run: Miri or ASan over the FFI tests, a
+concurrent free-versus-call test, any real-device test. ABI version stays 2 (no signature change).
+
+| # | Finding | State |
+|---|---|---|
+| 1 | Free races with another call / double free are undefined behaviour (handles are raw pointers) | doc-only: header, `Native.kt` and `FFI_DESIGN.md` now state exclusive-free and host ownership patterns; library-side handle table with generation tokens REQUIRED before real secrets, not implemented |
+| 2 | A completed held plaintext could be returned from a closed or expired channel | fixed: `kl_channel_open_fragment` returns `KL_ERR_CLOSED` and drops the held message; `held` is cleared after every close (seal, expiry, counter exhaustion, close). Rust regression test |
+| 3 | `kl_channel_approve_one_transfer` / `kl_channel_set_ready_to_receive` returned `KL_OK` on a closed channel | fixed: return `KL_ERR_CLOSED`. Rust test, C and C++ consumer checks |
+| 4 | `kl_channel_is_closed` ignored the deadline | fixed: new tiny core method `SecureChannel::poll_closed` (evaluates the deadline, closes on expiry), core unit test. FFI cannot test expiry (system clock) |
+| 5 | Poisoned mutex skipped zeroization in close | fixed: `kl_channel_close` recovers a poisoned mutex (`PoisonError::into_inner`) |
+| 6 | `kl_reassembler_free` used a blocking lock and skipped wipe on poison | fixed: `get_mut` on the owned Box, poison recovered; `kl_channel_free` likewise wipes via `get_mut` |
+| 7 | JNI `out_end` wrote the length slot on every status | fixed: length written only on `KL_OK` / `KL_ERR_BUFFER`, else 0 (not compiled here, see below) |
+| 8 | JNI did not validate `kind` / `maxFrag`; `SetLongArrayRegion` failure leaked a handle | fixed: `kind` 1..3 and `maxFrag` 1..256 else `KL_ERR_LIMITS`; `handle_out` checks `ExceptionCheck` and frees the handle on failure (not compiled here, see below) |
+| 9 | Header text did not match D026 failure counting | fixed (docs) |
+| 10 | In and out buffers may not overlap (undocumented) | doc-only: stated in the header and `FFI_DESIGN.md` |
+| 11 | Free semantics wording suggested a concurrent call during free was safe | fixed (docs): see #1 |
+
+The Android JNI shim and Kotlin binding changes were not built or run in this environment (no NDK or
+JVM harness here); they are small and reviewed by reading only.
