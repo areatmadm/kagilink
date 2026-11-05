@@ -99,7 +99,10 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
 - Windows RDP input requires feasibility evidence first. Unsupported/blocked
   input must fail. Do not enable real-secret transfer until safe target input
   is demonstrated. Queued keystrokes are not proof of delivery or RDP login.
-- Warn that compromised receiving computers can expose decrypted credentials.
+- Warn that compromised receiving computers can expose decrypted credentials. Before the first
+  transfer to a receiver (and whenever the receiver changes) the sending app must show the short
+  notice from docs/RISK_NOTICE.md and require explicit acknowledgment (D023). No UI may call a PC
+  "safe" or "verified safe"; device/TPM results are shown as claims.
   Local tamper checks cannot prove complete offline integrity.
 
 ## Workflow

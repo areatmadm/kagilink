@@ -435,3 +435,15 @@ only attests boot state (here with Secure Boot disabled), not that the running s
 keyloggers. Next design questions for the owner: what the phone should require (hardware-bound key
 only, a particular boot state, or both), whether an online EK-certificate step is acceptable for a
 one-time enrolment, and whether to treat the check as a user-visible warning rather than a gate.
+
+
+## D023 — Risk notice and user responsibility, 2026-11-05
+
+Owner decision: KagiLink is a personal open-source project and the end user bears the responsibility
+for using it. Draft text (Korean and English) is in docs/RISK_NOTICE.md; it is NOT lawyer-reviewed and
+its enforceability is not promised. Consequences: the sending app shows the short notice and requires
+explicit acknowledgment before the first transfer to a receiver and whenever the receiver changes
+(AGENTS.md); documentation states that keyloggers on the receiving PC cannot be detected or prevented;
+UIs never call a PC "safe"; device/TPM information is shown as a claim. The disclaimer does not relax
+any technical requirement (PAKE, key confirmation, TTL, approvals, fail-closed behaviour) and does not
+replace the recommendation to send only one-time or soon-to-be-changed passwords.
