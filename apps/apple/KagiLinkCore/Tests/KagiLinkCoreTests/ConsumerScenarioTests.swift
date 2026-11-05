@@ -164,6 +164,21 @@ final class ConsumerScenarioTests: XCTestCase {
         XCTAssertEqual(kl_channel_is_closed(nil), 1)
     }
 
+    /// FFI review fixes (ABI v2): a closed channel refuses approve/ready/seal/open with KL_ERR_CLOSED.
+    func testClosedChannelRefusesEverything() throws {
+        let flow = try Flow.toM3()
+        let (m4, txCh) = try flow.tx!.finish(m3: flow.m3)
+        let rxCh = try flow.rx.finish(m4: m4)
+        let fragments = try txCh.seal(.control, plaintext: Array("synthetic-control".utf8), maxFragmentPayload: 256)
+        try rxCh.close()
+        XCTAssertTrue(rxCh.isClosed)
+        XCTAssertThrowsError(try rxCh.approveOneTransfer()) { XCTAssertEqual(($0 as? KagiLinkError)?.status, .closed) }
+        XCTAssertThrowsError(try rxCh.setReadyToReceive(true)) { XCTAssertEqual(($0 as? KagiLinkError)?.status, .closed) }
+        XCTAssertThrowsError(try rxCh.open(fragment: fragments[0])) { XCTAssertEqual(($0 as? KagiLinkError)?.status, .closed) }
+        // Closing twice and dropping the wrapper (deinit frees the handle exactly once) must be safe.
+        XCTAssertNoThrow(try rxCh.close())
+    }
+
     /// The growing-output helper must recover from a too-small first buffer using the size the
     /// library reports (a real kl_receiver_begin_attempt, M1 is far larger than 4 bytes).
     func testGrowingOutputRetriesOnSmallBuffer() {
