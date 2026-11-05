@@ -51,14 +51,14 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
         col.addView(codeField)
         notifyBox = CheckBox(this).apply { text = "Notify + app ACK mode (default: Indicate)" }
         col.addView(notifyBox)
-        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            col.addView(TextView(this).apply { text = "TEST ONLY fault injection (resets to none after each run unless kept):" })
+        if (FaultFactory.labels.isNotEmpty()) { // only debug builds have fault injection
+            col.addView(TextView(this).apply { text = FaultFactory.heading })
             faultSpinner = Spinner(this).apply {
                 adapter = ArrayAdapter(this@PeripheralActivity, android.R.layout.simple_spinner_dropdown_item,
-                    PeripheralSession.Fault.values().map { it.label })
+                    FaultFactory.labels)
             }
             col.addView(faultSpinner)
-            keepFault = CheckBox(this).apply { text = "keep fault selected after a run (for repeated attempts)" }
+            keepFault = CheckBox(this).apply { text = FaultFactory.keepLabel }
             col.addView(keepFault)
         }
         startBtn = Button(this).apply { text = "Start (advertise 60 s)"; setOnClickListener { onStartClicked() } }
@@ -89,8 +89,8 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
         codeField.text.clear()
         startBtn.isEnabled = false
         statusView.text = ""
-        val fault = PeripheralSession.Fault.values()[faultSpinner?.selectedItemPosition ?: 0]
-        session.start(code, notifyBox.isChecked, fault) // session wipes `code`
+        val plan = FaultFactory.create(faultSpinner?.selectedItemPosition ?: 0)
+        session.start(code, notifyBox.isChecked, plan) // session wipes `code`
     }
 
     override fun onRequestPermissionsResult(rc: Int, perms: Array<out String>, res: IntArray) {
