@@ -1,0 +1,20 @@
+[package]
+name = "areatm-tpm-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "KagiLink read-only TPM feasibility probe for the Rust Windows receiver (D022). Reports claims only; no keys persisted, no secrets, nothing leaves the machine."
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_System_TpmBaseServices",
+] }

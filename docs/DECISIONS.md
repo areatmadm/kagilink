@@ -400,3 +400,20 @@ Next step (feasibility, read-only, synthetic data): a small Rust Phase-0 style p
 presence/version, whether a TPM-resident key can be created as a normal user, and whether attestation
 material is obtainable, run on the developer PC first and on volunteer PC bang machines only with the
 owner's decision. Trust results will be labelled as claims until verified, as already required.
+
+
+### D022 probe result on the developer PC, 2026-11-05
+
+`apps/windows/rust/tpm-probe` (Rust, official `windows` crate =0.62.2, read-only) was run as a NORMAL
+(non-elevated) user on the lead session's own PC (Gigabyte B450 desktop, Windows 11). Claims reported:
+TPM 2.0 present through the TBS broker, hardware interface type, manufacturer string AMD (an AMD
+firmware TPM); Secure Boot DISABLED (registry claim); TBS context, `TPM2_GetCapability` and
+`TPM2_PCR_Read` (PCR 0 and 7, SHA-256) all allowed without administrator rights; the Platform Crypto
+Provider opened and an unnamed ephemeral TPM P-256 key was created and freed as a normal user; the EK
+public key was readable; the EK certificate property returned only 8 bytes, which is not a certificate
+(meaning not confirmed; AMD firmware TPMs are known to need an online fetch for EK certificates, which
+is recalled, not verified here). Consequences for the design: (1) the TPM is usable by a normal-user
+portable process, which is the property the PC bang scenario needs; (2) an offline phone-side check of
+the EK certificate chain cannot be assumed; (3) a policy that requires Secure Boot would reject this
+very PC; (4) key attestation / quote with an attestation key was NOT tested yet. One probe bug was found
+and fixed first: the TBS flag for TPM 2.0 is 0x4, not 0x2. This is one machine, not PC bang data.

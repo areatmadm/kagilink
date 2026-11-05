@@ -178,6 +178,14 @@ aarch64 qemu job, within the limits above. The iOS simulator was deliberately no
 | 300 s rerun of all four targets (GitHub-hosted, nightly-2026-11-01, ASan) | PASS: hello_decode 128,067,057; handshake_messages 2,297,091; channel_fragments 420,589; ffi_calls 388,564 executions; no crash, assertion failure or sanitizer report |
 | What this does not show | The `ffi_calls` target is small and shallow compared with the others; the harness uses `unsafe` itself; 5-minute runs without a saved corpus are a smoke level; no independent review of the FFI `unsafe` code |
 
+### D022 TPM probe addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `apps/windows/rust/tpm-probe` builds on Windows; non-Windows builds a stub; fmt, clippy -D warnings, workspace tests (104 passing), cargo deny and cargo audit with the new crate | PASS |
+| Run as a normal user on the lead PC | TPM 2.0 (AMD firmware TPM, hardware interface); Secure Boot disabled; TBS context, GetCapability, PCR read, ephemeral TPM P-256 key creation and EK public read all worked without administrator rights; EK certificate not available in NV (8-byte value) |
+| Key attestation or quote with an attestation key, offline verification on a phone, PC bang machines, other vendors' TPMs | NOT RUN / UNKNOWN |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;
