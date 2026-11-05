@@ -348,3 +348,107 @@ JV(channelFree)(JNIEnv* env, jclass c, jlong h) {
   (void)c;
   kl_channel_free(H(kl_channel_t, h));
 }
+
+/* ---- BLE chunk codec (ABI v2) ---------------------------------------------------------------
+ * Same conventions as above. Arguments that do not fit the C parameter type are rejected here with
+ * KL_ERR_LIMITS before any cast, so the library never sees a truncated value. */
+
+J(frameChunk)(JNIEnv* env, jclass c, jint mtype, jbyteArray msg, jlong maxChunk, jbyteArray out,
+              jlongArray outLen, jlongArray outCount) {
+  (void)c;
+  if (mtype < 0 || mtype > 255) return (jint)KL_ERR_LIMITS;
+  if (maxChunk < 0 || maxChunk > 65536) return (jint)KL_ERR_LIMITS;
+  In a;
+  Out o;
+  if (in_get(env, msg, &a) != 0) return FAIL_NULL;
+  if (out_begin(env, out, outLen, &o) != 0) {
+    in_put(&a);
+    return FAIL_NULL;
+  }
+  size_t count = 0;
+  kl_status_t st = kl_frame_chunk((uint8_t)mtype, a.p, a.n, (size_t)maxChunk, o.p, &o.cap,
+                                  outCount != NULL ? &count : NULL);
+  if (outCount != NULL) {
+    jlong cnt = (jlong)count;
+    (*env)->SetLongArrayRegion(env, outCount, 0, 1, &cnt);
+  }
+  out_end(env, &o, out, outLen, st);
+  in_put(&a);
+  return (jint)st;
+}
+
+J(reassemblerNew)(JNIEnv* env, jclass c, jlongArray outH) {
+  (void)c;
+  kl_reassembler_t* r = NULL;
+  kl_status_t st = kl_reassembler_new(outH != NULL ? &r : NULL);
+  jint rc = (jint)st;
+  if (handle_out(env, outH, r) != 0) {
+    kl_reassembler_free(r);
+    rc = FAIL_NULL;
+  }
+  return rc;
+}
+
+/* outComplete[0] = 1 only when this chunk completed a message (then call reassemblerTake). */
+J(reassemblerPush)(JNIEnv* env, jclass c, jlong h, jbyteArray chunk, jintArray outComplete) {
+  (void)c;
+  if (outComplete == NULL) return FAIL_NULL;
+  In a;
+  if (in_get(env, chunk, &a) != 0) return FAIL_NULL;
+  uint8_t complete = 0;
+  kl_status_t st = kl_reassembler_push(H(kl_reassembler_t, h), a.p, a.n, &complete);
+  jint v = (jint)complete;
+  (*env)->SetIntArrayRegion(env, outComplete, 0, 1, &v);
+  in_put(&a);
+  return (jint)st;
+}
+
+J(reassemblerTake)(JNIEnv* env, jclass c, jlong h, jintArray outMtype, jbyteArray out,
+                   jlongArray outLen) {
+  (void)c;
+  if (outMtype == NULL) return FAIL_NULL;
+  Out o;
+  if (out_begin(env, out, outLen, &o) != 0) return FAIL_NULL;
+  uint8_t mtype = 0;
+  kl_status_t st = kl_reassembler_take(H(kl_reassembler_t, h), &mtype, o.p, &o.cap);
+  jint v = (jint)mtype;
+  (*env)->SetIntArrayRegion(env, outMtype, 0, 1, &v);
+  out_end(env, &o, out, outLen, st);
+  return (jint)st;
+}
+
+J(reassemblerIsDead)(JNIEnv* env, jclass c, jlong h) {
+  (void)env;
+  (void)c;
+  return (jint)kl_reassembler_is_dead(H(kl_reassembler_t, h));
+}
+
+JV(reassemblerFree)(JNIEnv* env, jclass c, jlong h) {
+  (void)env;
+  (void)c;
+  kl_reassembler_free(H(kl_reassembler_t, h));
+}
+
+J(ackChunk)(JNIEnv* env, jclass c, jint seq, jbyteArray out, jlongArray outLen) {
+  (void)c;
+  if (seq < 0 || seq > 255) return (jint)KL_ERR_LIMITS;
+  Out o;
+  if (out_begin(env, out, outLen, &o) != 0) return FAIL_NULL;
+  kl_status_t st = kl_ack_chunk((uint8_t)seq, o.p, &o.cap);
+  out_end(env, &o, out, outLen, st);
+  return (jint)st;
+}
+
+/* outInfo[0] = 1 if the chunk is exactly an ACK chunk, outInfo[1] = acknowledged sequence number. */
+J(parseAck)(JNIEnv* env, jclass c, jbyteArray chunk, jintArray outInfo) {
+  (void)c;
+  if (outInfo == NULL) return FAIL_NULL;
+  In a;
+  if (in_get(env, chunk, &a) != 0) return FAIL_NULL;
+  uint8_t is_ack = 0, seq = 0;
+  kl_status_t st = kl_parse_ack(a.p, a.n, &is_ack, &seq);
+  jint info[2] = {(jint)is_ack, (jint)seq};
+  (*env)->SetIntArrayRegion(env, outInfo, 0, 2, info);
+  in_put(&a);
+  return (jint)st;
+}

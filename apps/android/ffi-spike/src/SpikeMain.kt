@@ -255,6 +255,7 @@ fun main(args: Array<String>) {
     testWrongCode()
     testTamperClosesChannel()
     testNullAndBuffers()
+    codecCrossCheck(::check)
     println("Kotlin/JNI consumer: $checks checks, $failures failures")
     exitProcess(if (failures == 0) 0 else 1)
 }

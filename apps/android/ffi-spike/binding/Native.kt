@@ -65,4 +65,23 @@ object Native {
     @JvmStatic external fun channelClose(h: Long): Int
     @JvmStatic external fun channelIsClosed(h: Long): Int
     @JvmStatic external fun channelFree(h: Long)
+
+    // ---- BLE chunk codec (ABI v2). Message types: MTYPE_HANDSHAKE = 1, MTYPE_CHANNEL = 2. ----
+    const val MTYPE_HANDSHAKE = 1
+    const val MTYPE_CHANNEL = 2
+    const val ERR_LIMITS = 13
+
+    /** out receives repeated [uint32 BE length][chunk]; outCount[0] the chunk count. */
+    @JvmStatic external fun frameChunk(
+        mtype: Int, msg: ByteArray?, maxChunk: Long, out: ByteArray?, outLen: LongArray, outCount: LongArray?,
+    ): Int
+    @JvmStatic external fun reassemblerNew(outHandle: LongArray?): Int
+    /** outComplete[0] = 1 only when this chunk completed a message (then call [reassemblerTake]). */
+    @JvmStatic external fun reassemblerPush(h: Long, chunk: ByteArray?, outComplete: IntArray): Int
+    @JvmStatic external fun reassemblerTake(h: Long, outMtype: IntArray, out: ByteArray?, outLen: LongArray): Int
+    @JvmStatic external fun reassemblerIsDead(h: Long): Int
+    @JvmStatic external fun reassemblerFree(h: Long)
+    @JvmStatic external fun ackChunk(seq: Int, out: ByteArray?, outLen: LongArray): Int
+    /** outInfo[0] = 1 if exactly an ACK chunk, outInfo[1] = acknowledged sequence number. */
+    @JvmStatic external fun parseAck(chunk: ByteArray?, outInfo: IntArray): Int
 }

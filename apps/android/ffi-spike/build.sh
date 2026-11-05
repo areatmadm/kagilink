@@ -47,7 +47,8 @@ CP=$(ls "$KOTLIN_LIB"/kotlin-compiler-embeddable-*.jar "$KOTLIN_LIB"/kotlin-stdl
 STDLIB=$(ls "$KOTLIN_LIB"/kotlin-stdlib-*.jar | head -1)
 rm -rf "$OUT/classes" && mkdir -p "$OUT/classes"
 "$JAVA" -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect \
-  -jvm-target 11 -cp "$STDLIB" -d "$OUT/classes" "$HERE/binding/Native.kt" "$HERE/src/SpikeMain.kt"
+  -jvm-target 11 -cp "$STDLIB" -d "$OUT/classes" "$HERE/binding/Native.kt" "$HERE/binding/NativeHandle.kt" "$HERE/binding/Framing.kt" \
+  "$HERE/src/FramingReference.kt" "$HERE/src/CodecCrossCheck.kt" "$HERE/src/SpikeMain.kt"
 
 echo "== 4/4 dex"
 rm -rf "$OUT/dex" && mkdir -p "$OUT/dex"
