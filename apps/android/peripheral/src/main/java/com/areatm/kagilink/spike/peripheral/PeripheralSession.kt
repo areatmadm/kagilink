@@ -20,7 +20,9 @@ import android.os.HandlerThread
 import android.os.ParcelUuid
 import android.os.SystemClock
 import android.util.Log
+import com.areatm.kagilink.spike.Framing
 import com.areatm.kagilink.spike.Native
+import com.areatm.kagilink.spike.NativeHandle
 import java.security.SecureRandom
 import java.util.UUID
 
@@ -76,8 +78,10 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
     private var useIndicate = true
     private var cccdEnabled = false
     private var mtu = 23
-    private var senderH = 0L
-    private var channelH = 0L
+    // Each native handle is freed exactly once through NativeHandle (getAndSet(0)); all calls on
+    // them run on the single handler thread, so a free is never concurrent with another call.
+    private var sender: NativeHandle? = null
+    private var channel: NativeHandle? = null
     private var reassembler = Framing.Reassembler()
     private var sessionTimer: Runnable? = null
     private var finishing = false
@@ -134,14 +138,15 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
     }
 
     fun approveAndSendSecret() = h.post {
-        if (state != State.CHANNEL || channelH == 0L) { ui.onStatus("not ready"); return@post }
+        val chH = channel?.get() ?: 0L
+        if (state != State.CHANNEL || chH == 0L) { ui.onStatus("not ready"); return@post }
         // The UI button is the explicit user approval (synthetic data only in this spike).
-        var st = Native.channelApproveOneTransfer(channelH)
+        var st = Native.channelApproveOneTransfer(chH)
         if (st != Native.OK) { finish("approve failed $st"); return@post }
         val sealed = ByteArray(4096)
         val len = longArrayOf(sealed.size.toLong())
         val count = LongArray(1)
-        st = Native.channelSeal(channelH, Native.KIND_SECRET, SYNTHETIC_SECRET.copyOf(), 200, sealed, len, count)
+        st = Native.channelSeal(chH, Native.KIND_SECRET, SYNTHETIC_SECRET.copyOf(), 200, sealed, len, count)
         if (st != Native.OK) { Native.secureWipe(sealed); finish("seal failed $st"); return@post }
         var off = 0
         for (i in 0 until count[0].toInt()) {
@@ -326,17 +331,17 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
                 val st = Native.senderStart(c, m.data, DEVICE_ID, PURPOSE, CLAIMS, out, len, hs)
                 Native.secureWipe(c); code = null
                 if (st != Native.OK) { finish("sender_start failed $st"); return }
-                senderH = hs[0]
+                sender = NativeHandle(hs[0], Native::senderFree)
                 state = State.AWAIT_M3
                 sendMessage(Framing.MTYPE_HANDSHAKE, out.copyOf(len[0].toInt()))
                 ui.onStatus("M1 received, M2 sent")
             }
             m.mtype == Framing.MTYPE_HANDSHAKE && state == State.AWAIT_M3 -> {
                 val out = ByteArray(1024); val len = longArrayOf(out.size.toLong()); val ch = LongArray(1)
-                val st = Native.senderFinish(senderH, m.data, out, len, ch)
-                Native.senderFree(senderH); senderH = 0
+                val st = Native.senderFinish(sender?.get() ?: 0L, m.data, out, len, ch)
+                sender?.close(); sender = null
                 if (st != Native.OK) { finish("sender_finish failed $st (wrong code or tamper)"); return }
-                channelH = ch[0]
+                channel = NativeHandle(ch[0], Native::channelFree)
                 state = State.CHANNEL
                 sendMessage(Framing.MTYPE_HANDSHAKE, out.copyOf(len[0].toInt()))
                 ui.onStatus("M3 verified, M4 sent; secure channel open")
@@ -344,7 +349,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
             }
             m.mtype == Framing.MTYPE_CHANNEL && state == State.CHANNEL -> {
                 val plain = ByteArray(1024); val len = longArrayOf(plain.size.toLong()); val info = IntArray(2)
-                val st = Native.channelOpenFragment(channelH, m.data, plain, len, info)
+                val st = Native.channelOpenFragment(channel?.get() ?: 0L, m.data, plain, len, info)
                 if (st != Native.OK) { Native.secureWipe(plain); finish("open_fragment failed $st"); return }
                 if (info[1] == 1 && info[0] == Native.KIND_RESULT) {
                     Native.secureWipe(plain)
@@ -366,8 +371,9 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         messageTimer = null; ackTimer = null; sessionTimer = null
         stopAdvertising()
         code?.let { Native.secureWipe(it) }; code = null
-        if (channelH != 0L) { Native.channelClose(channelH); Native.channelFree(channelH); channelH = 0 }
-        if (senderH != 0L) { Native.senderFree(senderH); senderH = 0 }
+        channel?.let { Native.channelClose(it.get()); it.close() }; channel = null
+        sender?.close(); sender = null
+        reassembler.close()
         queue.clear()
         central?.let { gatt?.cancelConnection(it) }
         gatt?.close(); gatt = null; central = null

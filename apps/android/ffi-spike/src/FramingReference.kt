@@ -1,13 +1,15 @@
-package com.areatm.kagilink.spike.peripheral
+package com.areatm.kagilink.spike
 
 import java.io.ByteArrayOutputStream
 
 /**
- * Kotlin implementation of docs/BLE_GATT_SPEC.md section 5 (chunk framing v1). The C ABI has no
+ * Independent Kotlin implementation of docs/BLE_GATT_SPEC.md section 5 (chunk framing v1). Written when the C ABI had no
  * chunk functions yet, so this mirrors core/kagilink-core/src/ble_frame.rs. Pure, no Android types.
+ * TEST REFERENCE ONLY: kept so the library codec (ABI v2, via JNI) can be cross-checked against an
+ * independent implementation; the app uses [Framing] (JNI) instead.
  * Chunk = flags:u8 | seq:u8 | body. FIRST body starts with mtype:u8 | total_len:u16 BE.
  */
-object Framing {
+object FramingReference {
     const val MAX_BLE_MESSAGE = 512
     const val MIN_CHUNK = 6
     const val MAX_CHUNK = 512
