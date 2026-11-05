@@ -23,12 +23,9 @@ derived from the receiver design, wording not yet observed (record what is reall
 A. PC: `target\debug\areatm-kagilink-receiver.exe ble-receive`, type `YES`, read the 6-digit code.
 B. Phone: pick the mode in the red menu, type the code, press **Start**. Within 60 s of the code appearing.
 C. PC: choose the list row whose `KL-XXXX` tag matches the phone.
-D. Note the PC result line, the line `Failure budget used: n/3`, and the phone log lines `FAULT SESSION start=<UTC>
-   codeHash4=<4 hex>` and `FAULT RESULT mode=...`. The hash is the first 4 hex characters of SHA-256 of the
-   six code digits (e.g. `python -c "import hashlib;print(hashlib.sha256(b'123456').hexdigest()[:4])"`), so a
-   run can be matched with the PC's code without writing the code down; the phone UTC time is for matching the
-   PC log time. (4 hex characters narrow a six-digit code to about 15 candidates: fine for these synthetic,
-   60-second codes, never for a real flow.)
+D. Note the PC result line, the line `Failure budget used: n/3`, and the phone log lines `FAULT SESSION start=<UTC>`
+   and `FAULT RESULT mode=...`. The phone logs only the UTC start time (whole seconds) of the session; match it with
+   the attempt start time the PC receiver prints. Nothing derived from the code is logged (no hash, no digits).
 
 ## 1. `tamperM4` three times with the SAME code (failure budget 1/3 -> 2/3 -> 3/3, code destroyed)
 
