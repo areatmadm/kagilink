@@ -162,6 +162,7 @@ fn fake_session(args: &[String]) -> ExitCode {
 /// Real BLE session: show the code, scan, let the USER choose a row, connect, run one attempt.
 #[cfg(windows)]
 fn ble_receive(args: &[String]) -> ExitCode {
+    use areatm_kagilink_core::MAX_FAILURES;
     use areatm_kagilink_receiver::selection::build_list;
     let gate = match acknowledged_gate(args) {
         Ok(g) => g,
@@ -190,54 +191,80 @@ fn ble_receive(args: &[String]) -> ExitCode {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(10)
         .clamp(1, 30);
-    let raws = match areatm_kagilink_receiver::ble::scan_advertisements(seconds) {
-        Ok(r) => r,
-        Err(e) => {
-            println!("Scan failed: {e:?}");
+    let scripted = flag_value(args, "--choose").is_some();
+    // One code can be tried more than once: every attempt that already sent M3 and fails uses one
+    // of the three failures (D026), so the budget is shown after each attempt and the user may
+    // retry with the SAME code until it is spent or expires.
+    loop {
+        if !rx.is_active() {
+            println!("The code is no longer active (expired, used up or consumed).");
             return ExitCode::from(1);
         }
-    };
-    let list = build_list(&raws);
-    if list.entries().is_empty() {
-        println!("No KagiLink senders found");
-        return ExitCode::from(1);
-    }
-    for (i, c) in list.entries().iter().enumerate() {
-        match (&c.blocked, &c.tag) {
-            (None, Some(t)) => println!("[{}] KL-{t}  signal: {:?}", i + 1, c.signal),
-            (_, Some(t)) => println!("[{}] KL-{t}  cannot choose ({:?})", i + 1, c.blocked),
-            _ => println!("[{}] (no usable tag)  cannot choose", i + 1),
+        let raws = match areatm_kagilink_receiver::ble::scan_advertisements(seconds) {
+            Ok(r) => r,
+            Err(e) => {
+                println!("Scan failed: {e:?}");
+                return ExitCode::from(1);
+            }
+        };
+        let list = build_list(&raws);
+        if list.entries().is_empty() {
+            println!("No KagiLink senders found");
+            return ExitCode::from(1);
         }
-    }
-    let choice = match flag_value(args, "--choose") {
-        Some(v) => v.parse::<usize>().ok(),
-        None => {
-            print!("Pick the row whose tag matches your phone: ");
-            let _ = io::stdout().flush();
-            let mut line = String::new();
-            let _ = io::stdin().lock().read_line(&mut line);
-            line.trim().parse::<usize>().ok()
+        for (i, c) in list.entries().iter().enumerate() {
+            match (&c.blocked, &c.tag) {
+                (None, Some(t)) => println!("[{}] KL-{t}  signal: {:?}", i + 1, c.signal),
+                (_, Some(t)) => println!("[{}] KL-{t}  cannot choose ({:?})", i + 1, c.blocked),
+                _ => println!("[{}] (no usable tag)  cannot choose", i + 1),
+            }
         }
-    };
-    let Some(index) = choice.and_then(|n| n.checked_sub(1)) else {
-        println!("No valid row chosen. Nothing was connected.");
-        return ExitCode::from(2);
-    };
-    let target = match list.choose_target(index) {
-        Ok(t) => t,
-        Err(e) => {
-            println!("Refused: {e:?}");
+        let choice = match flag_value(args, "--choose") {
+            Some(v) => v.parse::<usize>().ok(),
+            None => {
+                print!("Pick the row whose tag matches your phone: ");
+                let _ = io::stdout().flush();
+                let mut line = String::new();
+                let _ = io::stdin().lock().read_line(&mut line);
+                line.trim().parse::<usize>().ok()
+            }
+        };
+        let Some(index) = choice.and_then(|n| n.checked_sub(1)) else {
+            println!("No valid row chosen. Nothing was connected.");
             return ExitCode::from(2);
+        };
+        let target = match list.choose_target(index) {
+            Ok(t) => t,
+            Err(e) => {
+                println!("Refused: {e:?}");
+                return ExitCode::from(2);
+            }
+        };
+        let mut link = match areatm_kagilink_receiver::ble_link::connect(target.key()) {
+            Ok(l) => l,
+            Err(e) => {
+                println!("Connect failed: {e:?}");
+                return ExitCode::from(1);
+            }
+        };
+        let result = run_attempt(&mut link, &mut rx, &mut rng);
+        println!(
+            "Failure budget used: {}/{} (an attempt abandoned after M3 is included)",
+            rx.failures_including_open(),
+            MAX_FAILURES
+        );
+        if result.is_ok() || scripted {
+            return report_attempt(result);
         }
-    };
-    let mut link = match areatm_kagilink_receiver::ble_link::connect(target.key()) {
-        Ok(l) => l,
-        Err(e) => {
-            println!("Connect failed: {e:?}");
+        report_attempt(result);
+        print!("Retry with the same code? Type y to scan again (anything else ends): ");
+        let _ = io::stdout().flush();
+        let mut line = String::new();
+        let _ = io::stdin().lock().read_line(&mut line);
+        if line.trim() != "y" {
             return ExitCode::from(1);
         }
-    };
-    report_attempt(run_attempt(&mut link, &mut rx, &mut rng))
+    }
 }
 
 #[cfg(windows)]

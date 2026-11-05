@@ -229,6 +229,9 @@ impl GattLink for WinGattLink {
         if !self.closed {
             self.closed = true;
             let _ = self.tx.RemoveValueChanged(self.token);
+            // Release the GATT session first so Windows can drop the link instead of keeping it alive.
+            let _ = self._session.SetMaintainConnection(false);
+            let _ = self._session.Close();
             let _ = self.device.Close();
         }
     }

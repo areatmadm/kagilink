@@ -135,7 +135,10 @@ allows but must work at 23.
 ## 6. Timing and lifecycle
 
 * The 60 s code lifetime of D014 bounds the whole session; the receiver is authoritative.
-* A message must complete within 5 s of its FIRST chunk, otherwise the connection is dropped.
+* A message must complete within 5 s of its FIRST chunk, otherwise the connection is dropped. The FIRST chunk of the next
+  handshake message may take longer because the peer runs CPace: the Windows receiver waits up to 10 s for it
+  (`FIRST_CHUNK_WAIT`), so a phone that answers M1 after 6 s is accepted by design and a delay of more than 10 s is
+  the timeout case (field result 2026-11-06: a 6 s delay was accepted). The 60 s code lifetime bounds everything.
 * If the central does not enable indications within 5 s of connecting, the peripheral disconnects.
 * After the SECRET is delivered and the RESULT is exchanged, or on any error, both sides disconnect and
   wipe state. Reconnect = new session.
