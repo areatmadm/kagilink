@@ -628,4 +628,11 @@ message in and an 11 B RESULT confirmed; subscribe to RESULT about 0.58 s, clean
 false and `peripheralManagerIsReady` fired once; zero protocol or codec error logs. Same sequence and sizes as the earlier run with
 the Swift codec. Signing reused the existing AreaTM development certificate and wildcard profile (no new issuance, registration or upload).
 Not verified: background advertising, MTU 23 small chunks, two advertisers or a copied tag, error paths on the real radio, repeat runs.
-Android retest with the new build: installed by the Android session, run pending.
+
+Android retest with the same ABI v2 codec (Galaxy S24, build from main 5726482), reported by the Android session from the PHONE
+log only; the Windows-side output of these two runs was not shown to the lead session, so the PC side is UNCONFIRMED here.
+Indicate: RESULT 11 B received, MTU 517, 3 chunks of 244 B, 3 send callbacks and 0 failures (mean 73.1 ms, max 129.1 ms),
+0 ACKs, advertise to connect 5088 ms, connect to CCCD 2054 ms. Notify+app ACK: RESULT 11 B received, MTU 517, 3 chunks of 244 B,
+3 callbacks and 0 failures (mean 5.3 ms, max 7.3 ms), 3 app ACKs, advertise to connect 7492 ms, connect to CCCD 2184 ms. No errors;
+MTU history [517] in both modes; numbers match the pre-codec build within noise. Not measured: RPA rotation, timeouts, wrong code,
+tampering, disconnect paths. One run per mode.
