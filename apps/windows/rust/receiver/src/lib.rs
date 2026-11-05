@@ -13,6 +13,8 @@ use areatm_kagilink_core::{
 };
 use std::sync::Arc;
 
+pub mod selection;
+
 #[cfg(windows)]
 pub mod ble;
 
