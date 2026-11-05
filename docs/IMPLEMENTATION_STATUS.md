@@ -558,3 +558,27 @@ channel, small buffers. Still NOT verified: BLE transport, Keystore/Secure Encla
 | CLI `ble-receive`: risk notice, code shown first, active scan, user picks a row, connect, one attempt | COMPILES ONLY, NOT RUN |
 
 Workspace: 150 tests pass, clippy `-D warnings` clean. The fake phone proves driver and framing logic, not real BLE behaviour (MTU, indication delivery, scan-response merging all remain unmeasured). Real-secret transfer stays disabled (D012).
+
+### First end-to-end BLE exchange: iPhone 15 Pro to Windows receiver (reported 2026-11-06)
+
+Reported by the macOS session (PR #8, not yet merged; the lead session has not repeated the run):
+iPhone 15 Pro (KL-V1 peripheral spike, foreground) to the Windows Rust receiver (`ble-receive`
+driver over `ble_link`), synthetic data, one run: M1 153 B, M2, M3 65 B, M4, SECRET fragment, RESULT
+(11 B) all exchanged; Windows printed "Transfer OK: 33 bytes received in 1 fragments"; about 0.6 s from
+subscribe to RESULT.
+
+| Measurement | Reported value |
+|---|---|
+| Local name `KL-XXXX` visible in Windows `ble-list` (active scan, app in foreground) | yes, 3 observations (2 plus the exchange run) |
+| iOS `maximumUpdateValueLength` | 512 (ATT MTU 515); chunk size capped at 244 by the spec |
+| Indicate send queue | one `updateValue` returned false, `peripheralManagerIsReady` fired once, queue drained (retry path works) |
+| iOS peripheral API | reports subscription only (no connect event) and cannot disconnect the central |
+
+Consequences recorded: advertising stops at subscribe on iOS; on error the iOS sender answers with an
+error, removes the service and stops advertising, and the Windows central must drop the link (the Rust
+driver already disconnects on every error). Not verified: background advertising, MTU 23 small chunks,
+Notify+ACK (iOS uses Indicate), two advertisers or a copied tag, error paths on the real radio,
+repeat runs. Code delivery to the phone was the practical bottleneck when the tester could not see the
+laptop screen.
+Open proposal accepted by the lead: expose the BLE chunk codec through the C ABI so platforms stop
+re-implementing it (the Swift spike re-implemented spec section 5 in `Framing.swift`).
