@@ -232,6 +232,15 @@ Remote Desktop target exists.
 | BLE_GATT_SPEC.md updated: scan-response tag `KL-XXXX`, signal-sorted list, user selection, Notify + ACK, no auto-connect | DRAFT, not reviewed by platform sessions, not run on devices |
 | Scan-response local name carrying the tag on iOS/Android/Windows; Notify stop-and-wait; look-alike tag behaviour | NOT RUN |
 
+### Receiver tag list and scan addendum — 2026-11-06
+
+| Check | Actual outcome |
+|---|---|
+| `selection.rs` (pure logic: tag validation, name/service-data agreement, duplicate-tag blocking, signal bars, stable sort, no default choice) written by a subagent and re-checked by the lead | 12 unit tests; workspace total 142 passing, 0 failed; fmt, clippy -D warnings and cargo deny clean; no `unsafe` in `ble.rs` or `selection.rs` |
+| `ble.rs` `scan_advertisements` (active scan, KL-V1 service filter, local name and 128-bit service-data parsing) and `ble-list [--seconds N] [--choose N]` CLI | Builds; 5 parser unit tests pass. The CLI prints only the tag, a signal bar and a reason, never an address, device name, grouping key or raw signal value (checked by reading the output code and by a grep) |
+| Real run on the lead PC | `ble-list --seconds 6`: "No KagiLink senders found" (no phone advertises the new KL-V1 service yet). The path from a real advertisement to a printed row has NOT run on hardware |
+| Connect step after selection, indication/notify subscription, M1..M4 over the new GATT service, the phones' advertising of the tag | NOT IMPLEMENTED |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;

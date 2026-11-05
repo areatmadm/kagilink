@@ -27,6 +27,180 @@ const CHARACTERISTIC: GUID = GUID::from_u128(0x7d9a0002_6f8e_4d52_9b91_89c767b6e
 const PING: &[u8; 16] = b"KagiLink-P0-PING";
 const PONG: &[u8; 16] = b"KagiLink-P0-PONG";
 
+/// Production draft service (docs/BLE_GATT_SPEC.md, D025). Advertised by the sender.
+const KL_V1_SERVICE: GUID = GUID::from_u128(0x3685355e_2903_4e85_bdd6_474ada0838c1);
+/// Production draft RX characteristic (receiver writes). Unused until the connect step exists.
+#[allow(dead_code)]
+const KL_V1_RX: GUID = GUID::from_u128(0x316da2a3_cfc7_4bbf_a736_58c4e7d8d5cf);
+/// Production draft TX characteristic (sender notifies/indicates). Unused until the connect step.
+#[allow(dead_code)]
+const KL_V1_TX: GUID = GUID::from_u128(0x7c69e9b3_c395_4fc0_87b2_b564d7b8b29e);
+
+/// BLE AD type "Service Data - 128-bit UUID".
+const AD_SERVICE_DATA_128: u8 = 0x21;
+
+/// Why an advertisement scan could not run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScanError {
+    /// No Bluetooth adapter is available to this process.
+    NoAdapter,
+    /// The adapter does not support the LE central role.
+    CentralUnsupported,
+    /// A WinRT step failed.
+    Failed(String),
+}
+
+/// Parse the payload of an AD type 0x21 section (the bytes after the type): a 16-byte UUID in
+/// little-endian order followed by the data. Returns the data only if the UUID equals
+/// `KL_V1_SERVICE` AND at least one data byte is present (an empty payload gives `None`).
+fn parse_service_data_128(section_bytes: &[u8]) -> Option<Vec<u8>> {
+    if section_bytes.len() <= 16 {
+        return None;
+    }
+    let (uuid, data) = section_bytes.split_at(16);
+    if uuid == KL_V1_SERVICE.to_u128().to_le_bytes() {
+        Some(data.to_vec())
+    } else {
+        None
+    }
+}
+
+fn read_buffer(buf: &windows::Storage::Streams::IBuffer) -> Option<Vec<u8>> {
+    let reader = DataReader::FromBuffer(buf).ok()?;
+    let len = reader.UnconsumedBufferLength().ok()? as usize;
+    let mut bytes = vec![0u8; len];
+    reader.ReadBytes(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+/// Actively scan for `scan_seconds` and return one observation per received packet that lists or
+/// carries data for the KL-V1 service. Addresses are used only as an opaque grouping key and are
+/// never printed or stored; device names are only passed on in memory.
+pub fn scan_advertisements(
+    scan_seconds: u64,
+) -> Result<Vec<crate::selection::RawAdvertisement>, ScanError> {
+    use crate::selection::RawAdvertisement;
+    let adapter = BluetoothAdapter::GetDefaultAsync()
+        .and_then(|op| op.join())
+        .map_err(|_| ScanError::NoAdapter)?;
+    if !adapter.IsCentralRoleSupported().unwrap_or(false) {
+        return Err(ScanError::CentralUnsupported);
+    }
+    let fail = |step: &str, e: windows::core::Error| ScanError::Failed(format!("{step}: {e}"));
+    let watcher = BluetoothLEAdvertisementWatcher::new().map_err(|e| fail("watcher", e))?;
+    // Active scanning is required so scan responses (which may carry the tag) arrive.
+    watcher
+        .SetScanningMode(BluetoothLEScanningMode::Active)
+        .map_err(|e| fail("scanning mode", e))?;
+    let found: Arc<Mutex<Vec<RawAdvertisement>>> = Arc::new(Mutex::new(Vec::new()));
+    let found_cb = Arc::clone(&found);
+    let handler = TypedEventHandler::<
+        BluetoothLEAdvertisementWatcher,
+        BluetoothLEAdvertisementReceivedEventArgs,
+    >::new(move |_, args| {
+        let Some(args) = args.as_ref() else {
+            return Ok(());
+        };
+        let Ok(adv) = args.Advertisement() else {
+            return Ok(());
+        };
+        let listed = adv
+            .ServiceUuids()
+            .map(|u| u.into_iter().any(|g| g == KL_V1_SERVICE))
+            .unwrap_or(false);
+        let mut service_data = None;
+        if let Ok(sections) = adv.DataSections() {
+            for section in sections {
+                if section.DataType().ok() != Some(AD_SERVICE_DATA_128) {
+                    continue;
+                }
+                if let Some(bytes) = section.Data().ok().and_then(|b| read_buffer(&b)) {
+                    if let Some(d) = parse_service_data_128(&bytes) {
+                        service_data = Some(d);
+                        break;
+                    }
+                }
+            }
+        }
+        if !listed && service_data.is_none() {
+            return Ok(());
+        }
+        let local_name = adv
+            .LocalName()
+            .ok()
+            .map(|h| h.to_string())
+            .filter(|n| !n.is_empty());
+        let raw = RawAdvertisement {
+            local_name,
+            service_data,
+            rssi_dbm: args.RawSignalStrengthInDBm().ok(),
+            source: args.BluetoothAddress().unwrap_or(0),
+        };
+        if let Ok(mut v) = found_cb.lock() {
+            v.push(raw);
+        }
+        Ok(())
+    });
+    let token = watcher
+        .Received(&handler)
+        .map_err(|e| fail("watcher handler", e))?;
+    if let Err(e) = watcher.Start() {
+        let _ = watcher.RemoveReceived(token);
+        return Err(fail("scan start", e));
+    }
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(scan_seconds) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = watcher.Stop();
+    let _ = watcher.RemoveReceived(token);
+    let out = found.lock().map(|v| v.clone()).unwrap_or_default();
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn payload(uuid: GUID, data: &[u8]) -> Vec<u8> {
+        let mut v = uuid.to_u128().to_le_bytes().to_vec();
+        v.extend_from_slice(data);
+        v
+    }
+
+    #[test]
+    fn matching_uuid_returns_data() {
+        let p = payload(KL_V1_SERVICE, &[0x4B, 0x4C, 0x32]);
+        assert_eq!(parse_service_data_128(&p), Some(vec![0x4B, 0x4C, 0x32]));
+    }
+
+    #[test]
+    fn wrong_uuid_is_rejected() {
+        let p = payload(GUID::from_u128(0x1234), &[1, 2, 3]);
+        assert_eq!(parse_service_data_128(&p), None);
+    }
+
+    #[test]
+    fn big_endian_uuid_order_is_rejected() {
+        let mut p = KL_V1_SERVICE.to_u128().to_be_bytes().to_vec();
+        p.push(9);
+        assert_eq!(parse_service_data_128(&p), None);
+    }
+
+    #[test]
+    fn too_short_is_rejected() {
+        assert_eq!(parse_service_data_128(&[]), None);
+        assert_eq!(parse_service_data_128(&[0u8; 15]), None);
+    }
+
+    #[test]
+    fn exactly_uuid_without_data_is_none() {
+        let p = payload(KL_V1_SERVICE, &[]);
+        assert_eq!(p.len(), 16);
+        assert_eq!(parse_service_data_128(&p), None);
+    }
+}
+
 /// What the diagnostic found. Nothing here identifies a device.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BleOutcome {

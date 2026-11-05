@@ -53,6 +53,78 @@ fn ask_acknowledgment() -> bool {
     io::stdin().lock().read_line(&mut line).is_ok() && line.trim() == "YES"
 }
 
+#[cfg(windows)]
+fn ble_list(args: &[String]) -> ExitCode {
+    use areatm_kagilink_receiver::selection::{build_list, SignalBar, Unselectable};
+    let value_of = |flag: &str| {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .and_then(|v| v.parse::<u64>().ok())
+    };
+    let seconds = value_of("--seconds").unwrap_or(10).clamp(1, 60);
+    let choose_requested = args.iter().any(|a| a == "--choose");
+    println!("Scanning for KagiLink senders for {seconds} s ...");
+    let raws = match areatm_kagilink_receiver::ble::scan_advertisements(seconds) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("Scan failed: {e:?}");
+            return ExitCode::from(1);
+        }
+    };
+    let list = build_list(&raws);
+    let entries = list.entries();
+    if entries.is_empty() {
+        println!("No KagiLink senders found");
+    }
+    for (i, c) in entries.iter().enumerate() {
+        let n = i + 1;
+        let tag = c.tag.as_deref().map(|t| format!("KL-{t}"));
+        match (&c.blocked, tag) {
+            (None, Some(t)) => {
+                let bar = match c.signal {
+                    SignalBar::Weak => "Weak",
+                    SignalBar::Medium => "Medium",
+                    SignalBar::Strong => "Strong",
+                    SignalBar::Unknown => "Unknown",
+                };
+                println!("[{n}] {t}  signal: {bar}");
+            }
+            (Some(Unselectable::DuplicateTag), Some(t)) => {
+                println!("[{n}] {t}  duplicate tag - cannot choose")
+            }
+            (Some(reason), _) => println!("[{n}] (no usable tag)  {reason:?}"),
+            (None, None) => println!("[{n}] (no usable tag)  no tag"),
+        }
+    }
+    if !entries.is_empty() {
+        println!("Pick the row whose tag matches the tag shown on your phone.");
+    }
+    if choose_requested {
+        let Some(n) = value_of("--choose") else {
+            println!("--choose needs a row number.");
+            return ExitCode::from(2);
+        };
+        let Some(index) = usize::try_from(n).ok().and_then(|n| n.checked_sub(1)) else {
+            println!("Refused: row numbers start at 1.");
+            return ExitCode::from(2);
+        };
+        match list.choose(index) {
+            Ok(c) => {
+                let t = c.tag.as_deref().unwrap_or("????");
+                println!(
+                    "Selected KL-{t} (not connecting: the connect step is not implemented yet)"
+                );
+            }
+            Err(e) => {
+                println!("Refused: {e:?}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -121,9 +193,20 @@ fn main() -> ExitCode {
                 ExitCode::from(64)
             }
         }
+        Some("ble-list") => {
+            #[cfg(windows)]
+            {
+                ble_list(&args)
+            }
+            #[cfg(not(windows))]
+            {
+                println!("ble-list is Windows only.");
+                ExitCode::from(64)
+            }
+        }
         _ => {
             println!(
-                "usage: kagilink-receiver check | loopback [--accept] | ble-ping [--seconds N]"
+                "usage: kagilink-receiver check | loopback [--accept] | ble-ping [--seconds N] | ble-list [--seconds N] [--choose N]"
             );
             println!("Skeleton only: no BLE, no text entry, synthetic data only.");
             ExitCode::from(64)
