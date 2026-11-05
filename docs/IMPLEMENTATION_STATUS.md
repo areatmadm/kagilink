@@ -136,7 +136,7 @@ not re-run them. Synthetic data only.
 | macOS native `cargo test --workspace --locked` (rustc 1.92.0, commit 7383359) | PASS: 104 tests, 0 failures |
 | Release build of core and FFI for aarch64-apple-ios and aarch64-apple-ios-sim | PASS (build only) |
 | Core test binaries (29 unit, 38 handshake, 10 mutation) installed and run on a physical iPhone 15 Pro, signed with an existing team development certificate through a temporary app; temporary app removed afterwards | PASS (reported) |
-| iOS simulator `simctl spawn` run | NOT RUN (interrupted) |
+| iOS simulator `simctl spawn` run | NOT RUN: deferred by the owner (decision relayed by the macOS session, 2026-11-05) because real Bluetooth and Secure Enclave behaviour can only be checked on a physical device; physical-device runs are the chosen method, signed with the existing team development certificate for synthetic-data debug tests only |
 | Not covered on the iPhone | the 7 CPace draft vectors, the 11 model tests, the 9 FFI tests, and any BLE, Secure Enclave or Keychain behaviour |
 
 Signing side effects, unverified: the session ran `xcodebuild -allowProvisioningUpdates` and Xcode
