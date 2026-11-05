@@ -81,6 +81,7 @@ fn acknowledged_gate(args: &[String]) -> Result<TransferGate, ExitCode> {
 
 /// Current UTC time as `YYYY-MM-DD HH:MM:SS UTC` (no time zone database needed). Printed so a tester can match
 /// PC output with a phone log by time; it carries no secret.
+#[cfg_attr(not(windows), allow(dead_code))] // only the Windows-only `ble-receive` uses it
 fn utc_stamp() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -89,6 +90,7 @@ fn utc_stamp() -> String {
     format_utc(secs)
 }
 
+#[cfg_attr(not(windows), allow(dead_code))] // only the Windows-only `ble-receive` uses it
 fn format_utc(secs: u64) -> String {
     let days = (secs / 86_400) as i64;
     let rem = secs % 86_400;
