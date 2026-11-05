@@ -187,6 +187,17 @@ aarch64 qemu job, within the limits above. The iOS simulator was deliberately no
 | Key attestation claim and platform claim (quote + boot log) through the Platform Crypto Provider as a normal user, on the lead PC | PASS (claims produced: key attestation 1703 bytes, platform claim 1187 bytes with a 4-byte PCR mask; OS self-check of the key claim OK). The AIK is not EK-activated; blobs not parsed |
 | Offline verification on a phone, EK-certificate chain for this AMD firmware TPM, PC bang machines, other vendors' TPMs | NOT RUN / UNKNOWN |
 
+### Windows Rust receiver skeleton addendum — 2026-11-05
+
+| Check | Actual outcome |
+|---|---|
+| `apps/windows/rust/receiver` (lib + CLI) and `tpm-probe` refactored into lib + bin with `assess()`; fmt, clippy -D warnings, workspace tests, cargo deny, cargo audit | PASS (receiver adds 7 unit tests: D024 decision table, boot state display-only, gate needs acknowledgment, blocked PC cannot be acknowledged, loopback in both modes) |
+| `kagilink-receiver check` on the lead PC as a normal user | TPM present, attestation claim produced, decision PROCEED; Secure Boot disabled is shown, not enforced |
+| `kagilink-receiver loopback --accept` on the lead PC | OK: core handshake with a simulated phone, one approved SECRET transfer of 36 synthetic bytes, plaintext not shown |
+| Cancel path (answer other than YES) | exit code 2, no transfer |
+| Block and RAM-only decisions on a real PC | NOT RUN (covered only by unit tests; the lead PC has a working TPM) |
+| BLE, text entry into a target window, phone-side verification, vault, installer/portable packaging | NOT DONE |
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;

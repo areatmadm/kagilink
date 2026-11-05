@@ -75,6 +75,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "areatm-kagilink-receiver"
+version = "0.0.0"
+dependencies = [
+ "areatm-kagilink-core",
+ "areatm-tpm-probe",
+]
+
+[[package]]
 name = "areatm-phase0-model"
 version = "0.0.0"
 
