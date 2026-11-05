@@ -14,7 +14,7 @@ try {
     New-Item -ItemType Directory -Force $outDir | Out-Null
     $exe = Join-Path $outDir 'consumer.exe'
     $libs = 'kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib bcrypt.lib advapi32.lib'
-    $cmd = "`"$vcvars`" >nul 2>&1 && cl /nologo /W4 /WX /std:c++20 /EHsc /Icore\kagilink-ffi\include tests\cpp\consumer.cpp target\release\areatm_kagilink_ffi.lib $libs /Fe:`"$exe`" /Fo:`"$outDir\`" && `"$exe`""
+    $cmd = "`"$vcvars`" >nul 2>&1 && cl /nologo /W4 /WX /std:c++20 /EHsc /Icore\kagilink-ffi\include tests\cpp\consumer.cpp target\release\areatm_kagilink_ffi.lib $libs /Fe:`"$exe`" /Fo:`"$outDir\consumer.obj`" && `"$exe`""
     cmd /c $cmd
     if ($LASTEXITCODE -ne 0) { throw "C++ consumer failed (exit $LASTEXITCODE)" }
 } finally {
