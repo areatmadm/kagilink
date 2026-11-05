@@ -108,7 +108,9 @@ side-channel/memory review.
 | Transport | SECRET receive requires receiver readiness | PASS |
 | Cleanup | Zeroize on close (best effort; structural test only, no memory-dump claim) | PASS (structural only: key arrays read as zero after close; no memory-dump claim) |
 
-Not covered by this matrix: fuzzing of parsers and framing, cross-language and draft
+Deterministic mutation tests (tests/mutation.rs, 2026-11-05) cover parsers, handshake messages and
+fragments with fixed seeds; they are not coverage-guided fuzzing. Not covered by this matrix:
+coverage-guided fuzzing of parsers and framing, cross-language and draft
 Appendix B vectors (a selection gate that remains open), constant-time and side-channel
 review, memory dump review, real BLE, hardware keys, FFI, target input and RDP. These
 remain mandatory before any real-secret use (see Phase 1+ mandatory tests above).
