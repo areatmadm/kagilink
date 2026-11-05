@@ -617,3 +617,22 @@ concurrent free-versus-call test, any real-device test. ABI version stays 2 (no 
 
 The Android JNI shim and Kotlin binding changes were not built or run in this environment (no NDK or
 JVM harness here); they are small and reviewed by reading only.
+
+### Retest with the C ABI codec (ABI v2): iPhone 15 Pro to Windows receiver, 2026-11-06
+
+Owner ran the Windows receiver (`ble-receive`, pick row 1) against the rebuilt iPhone app. PC output (owner-reported):
+"Transfer OK: 33 bytes received in 1 fragments" (synthetic data). Phone side reported by the macOS session: build is the ABI v2
+version on main 5726482 plus the PR #18 branch, the spike uses the Rust codec through `Codec`/`FrameReassembler` (not the Swift
+reference framing); subscribe gave `maximumUpdateValueLength` 512 (ATT MTU 515), chunk 244; M1 153 B, M3 65 B, one 40 B channel
+message in and an 11 B RESULT confirmed; subscribe to RESULT about 0.58 s, clean end about 1.0 s later; one `updateValue` returned
+false and `peripheralManagerIsReady` fired once; zero protocol or codec error logs. Same sequence and sizes as the earlier run with
+the Swift codec. Signing reused the existing AreaTM development certificate and wildcard profile (no new issuance, registration or upload).
+Not verified: background advertising, MTU 23 small chunks, two advertisers or a copied tag, error paths on the real radio, repeat runs.
+
+Android retest with the same ABI v2 codec (Galaxy S24, build from main 5726482), reported by the Android session from the PHONE
+log only; the Windows-side output of these two runs was not shown to the lead session, so the PC side is UNCONFIRMED here.
+Indicate: RESULT 11 B received, MTU 517, 3 chunks of 244 B, 3 send callbacks and 0 failures (mean 73.1 ms, max 129.1 ms),
+0 ACKs, advertise to connect 5088 ms, connect to CCCD 2054 ms. Notify+app ACK: RESULT 11 B received, MTU 517, 3 chunks of 244 B,
+3 callbacks and 0 failures (mean 5.3 ms, max 7.3 ms), 3 app ACKs, advertise to connect 7492 ms, connect to CCCD 2184 ms. No errors;
+MTU history [517] in both modes; numbers match the pre-codec build within noise. Not measured: RPA rotation, timeouts, wrong code,
+tampering, disconnect paths. One run per mode.
