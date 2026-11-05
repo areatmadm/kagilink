@@ -87,6 +87,7 @@ version = "0.0.0"
 dependencies = [
  "areatm-kagilink-core",
  "areatm-tpm-probe",
+ "rand_core",
  "windows",
 ]
 

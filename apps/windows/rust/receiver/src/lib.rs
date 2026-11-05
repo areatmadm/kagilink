@@ -13,10 +13,14 @@ use areatm_kagilink_core::{
 };
 use std::sync::Arc;
 
+pub mod fake_sender;
 pub mod selection;
+pub mod session;
 
 #[cfg(windows)]
 pub mod ble;
+#[cfg(windows)]
+pub mod ble_link;
 
 pub use areatm_tpm_probe::{assess, Assessment, Attestation, TpmState};
 

@@ -545,3 +545,16 @@ fragmented SECRET round trip, approval consumption, wrong code, D026 failure cou
 pre-M3 errors cost no budget, three post-M3 failures then TOO_MANY_FAILURES), tamper closes the
 channel, small buffers. Still NOT verified: BLE transport, Keystore/Secure Enclave key use,
 `panic=abort` on Android, real XCTest on device, review of the FFI `unsafe`.
+
+### Windows receiver: session driver, fake phone and GATT connect code (2026-11-06)
+
+| Item | State |
+|---|---|
+| `session.rs`: transport-agnostic `GattLink` trait and `run_attempt` (chunking, reassembly, Notify ACK, 10 s first-chunk and 5 s message timeouts, M1-M4, SECRET, RESULT) | implemented; fake-phone tests PASS |
+| `fake_sender.rs`: in-process KL-V1 phone using the real core sender; behaviours honest, wrong code, garbage M2, tampered M4, tampered SECRET, silent, drop after M3, duplicate chunk, skipped chunk, oversize length; Notify mode enforces stop-and-wait ACK | PASS (7 integration tests: chunk sizes 20-244 in Indicate and Notify, D026 counting through the driver, budget exhaustion, consumed code) |
+| `selection.rs`: opaque `ConnectTarget` for the chosen row (Debug redacted, same refusals as `choose`) | PASS |
+| `ble_link.rs`: WinRT connect, uncached KL-V1 discovery, Indicate preferred else Notify, subscribe before first write, write-with-response, disconnect detection | COMPILES ONLY. NOT RUN against any peripheral: no phone advertises the production service yet. |
+| CLI `fake-session [--behaviour B] [--chunk N] [--notify]` | runs (honest OK; wrong code and tampered M4 fail closed) |
+| CLI `ble-receive`: risk notice, code shown first, active scan, user picks a row, connect, one attempt | COMPILES ONLY, NOT RUN |
+
+Workspace: 150 tests pass, clippy `-D warnings` clean. The fake phone proves driver and framing logic, not real BLE behaviour (MTU, indication delivery, scan-response merging all remain unmeasured). Real-secret transfer stays disabled (D012).

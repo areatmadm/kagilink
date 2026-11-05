@@ -28,13 +28,11 @@ const PING: &[u8; 16] = b"KagiLink-P0-PING";
 const PONG: &[u8; 16] = b"KagiLink-P0-PONG";
 
 /// Production draft service (docs/BLE_GATT_SPEC.md, D025). Advertised by the sender.
-const KL_V1_SERVICE: GUID = GUID::from_u128(0x3685355e_2903_4e85_bdd6_474ada0838c1);
-/// Production draft RX characteristic (receiver writes). Unused until the connect step exists.
-#[allow(dead_code)]
-const KL_V1_RX: GUID = GUID::from_u128(0x316da2a3_cfc7_4bbf_a736_58c4e7d8d5cf);
-/// Production draft TX characteristic (sender notifies/indicates). Unused until the connect step.
-#[allow(dead_code)]
-const KL_V1_TX: GUID = GUID::from_u128(0x7c69e9b3_c395_4fc0_87b2_b564d7b8b29e);
+pub(crate) const KL_V1_SERVICE: GUID = GUID::from_u128(0x3685355e_2903_4e85_bdd6_474ada0838c1);
+/// Production draft RX characteristic (receiver writes).
+pub(crate) const KL_V1_RX: GUID = GUID::from_u128(0x316da2a3_cfc7_4bbf_a736_58c4e7d8d5cf);
+/// Production draft TX characteristic (sender notifies/indicates).
+pub(crate) const KL_V1_TX: GUID = GUID::from_u128(0x7c69e9b3_c395_4fc0_87b2_b564d7b8b29e);
 
 /// BLE AD type "Service Data - 128-bit UUID".
 const AD_SERVICE_DATA_128: u8 = 0x21;
@@ -65,7 +63,7 @@ fn parse_service_data_128(section_bytes: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-fn read_buffer(buf: &windows::Storage::Streams::IBuffer) -> Option<Vec<u8>> {
+pub(crate) fn read_buffer(buf: &windows::Storage::Streams::IBuffer) -> Option<Vec<u8>> {
     let reader = DataReader::FromBuffer(buf).ok()?;
     let len = reader.UnconsumedBufferLength().ok()? as usize;
     let mut bytes = vec![0u8; len];

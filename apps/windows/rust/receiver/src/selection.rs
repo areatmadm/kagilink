@@ -71,9 +71,36 @@ pub enum SelectionError {
 }
 
 /// The list shown to the user, strongest signal first.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SelectionList {
     entries: Vec<Candidate>,
+    /// Opaque per-row connection key, same order as `entries`; never shown, printed or stored.
+    sources: Vec<u64>,
+}
+
+impl core::fmt::Debug for SelectionList {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SelectionList")
+            .field("entries", &self.entries)
+            .finish()
+    }
+}
+
+/// An opaque handle to the advertiser the user chose. Its content is never printed.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ConnectTarget(u64);
+
+impl ConnectTarget {
+    /// The platform key (a BLE address as a number) for the connect call.
+    pub fn key(&self) -> u64 {
+        self.0
+    }
+}
+
+impl core::fmt::Debug for ConnectTarget {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("ConnectTarget(..)")
+    }
 }
 
 /// True if `s` is exactly `TAG_LEN` characters, all from `TAG_ALPHABET` (uppercase, case-sensitive).
@@ -164,6 +191,7 @@ pub fn build_list(raws: &[RawAdvertisement]) -> SelectionList {
             }
         })
         .collect();
+    let mut sources: Vec<u64> = merged.iter().map(|m| m.source).collect();
 
     // Every entry showing a tag that another (different) source also shows is blocked.
     let tags: Vec<Option<String>> = entries.iter().map(|e| e.tag.clone()).collect();
@@ -179,14 +207,19 @@ pub fn build_list(raws: &[RawAdvertisement]) -> SelectionList {
         }
     }
 
-    // Stable sort: strongest first, unknown RSSI last.
-    entries.sort_by(|a, b| match (a.rssi_dbm, b.rssi_dbm) {
+    // Stable sort: strongest first, unknown RSSI last. Sources move together with their rows.
+    let mut paired: Vec<(Candidate, u64)> = entries.drain(..).zip(sources.drain(..)).collect();
+    paired.sort_by(|(a, _), (b, _)| match (a.rssi_dbm, b.rssi_dbm) {
         (Some(x), Some(y)) => y.cmp(&x),
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (None, None) => std::cmp::Ordering::Equal,
     });
-    SelectionList { entries }
+    for (c, src) in paired {
+        entries.push(c);
+        sources.push(src);
+    }
+    SelectionList { entries, sources }
 }
 
 impl SelectionList {
@@ -202,6 +235,12 @@ impl SelectionList {
             Some(reason) => Err(SelectionError::NotSelectable(reason.clone())),
             None => Ok(c),
         }
+    }
+
+    /// Like `choose`, but returns the opaque connect handle. Same refusals, same explicit index.
+    pub fn choose_target(&self, index: usize) -> Result<ConnectTarget, SelectionError> {
+        self.choose(index)?;
+        Ok(ConnectTarget(self.sources[index]))
     }
 }
 
@@ -221,6 +260,26 @@ mod tests {
             rssi_dbm: rssi,
             source,
         }
+    }
+
+    #[test]
+    fn target_follows_the_sorted_row_and_is_redacted() {
+        let list = build_list(&[
+            raw(111, Some("KL-AB23"), None, Some(-90)),
+            raw(222, Some("KL-CD45"), None, Some(-50)),
+        ]);
+        assert_eq!(list.choose_target(0).unwrap().key(), 222);
+        assert_eq!(list.choose_target(1).unwrap().key(), 111);
+        assert_eq!(
+            format!("{:?}", list.choose_target(0).unwrap()),
+            "ConnectTarget(..)"
+        );
+        assert!(list.choose_target(2).is_err());
+        let dup = build_list(&[
+            raw(1, Some("KL-AB23"), None, Some(-50)),
+            raw(2, Some("KL-AB23"), None, Some(-60)),
+        ]);
+        assert!(dup.choose_target(0).is_err());
     }
 
     #[test]

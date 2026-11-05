@@ -12,6 +12,7 @@ description = "KagiLink Windows receiver skeleton in Rust (D022/D024): trust pol
 [dependencies]
 areatm-kagilink-core = { path = "../../../../core/kagilink-core" }
 areatm-tpm-probe = { path = "../tpm-probe" }
+rand_core = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "=0.62.2", features = [

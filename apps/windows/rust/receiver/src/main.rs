@@ -5,12 +5,16 @@
 //!              secret. `--accept` answers the risk notice non-interactively (for tests/CI).
 //! There is no BLE and no text entry into other windows yet.
 
+use areatm_kagilink_core::{os_rng, Clock, ReceiverSession, SystemClock};
+use areatm_kagilink_receiver::fake_sender::{Behaviour, FakeSender};
+use areatm_kagilink_receiver::session::{run_attempt, SessionError};
 use areatm_kagilink_receiver::{
     assess, decide, run_loopback, Decision, GateError, LoopbackError, TransferGate, NOTICE_EN,
     NOTICE_KO, RAM_ONLY_WARNING_EN, RAM_ONLY_WARNING_KO,
 };
 use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 fn print_assessment() -> Decision {
     let a = assess();
@@ -51,6 +55,189 @@ fn ask_acknowledgment() -> bool {
     let _ = io::stdout().flush();
     let mut line = String::new();
     io::stdin().lock().read_line(&mut line).is_ok() && line.trim() == "YES"
+}
+
+/// Assess, show the decision, require the risk-notice acknowledgment (D023) and return the gate.
+fn acknowledged_gate(args: &[String]) -> Result<TransferGate, ExitCode> {
+    let decision = print_assessment();
+    let mut gate = TransferGate::new(decision);
+    let accepted = args.iter().any(|a| a == "--accept") || ask_acknowledgment();
+    if !accepted {
+        println!("Cancelled: the risk notice was not acknowledged.");
+        return Err(ExitCode::from(2));
+    }
+    match gate.acknowledge() {
+        Err(GateError::Blocked(r)) => {
+            println!("Blocked: {r}");
+            Err(ExitCode::from(3))
+        }
+        Err(e) => {
+            println!("Gate error: {e:?}");
+            Err(ExitCode::from(2))
+        }
+        Ok(()) => Ok(gate),
+    }
+}
+
+fn flag_value(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+}
+
+fn report_attempt(
+    result: Result<areatm_kagilink_receiver::session::ReceiveReport, SessionError>,
+) -> ExitCode {
+    match result {
+        Ok(r) => {
+            println!(
+                "Transfer OK: {} bytes received in {} fragments (plaintext not shown).",
+                r.received_len, r.fragments
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            println!("Attempt failed: {e:?}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Full receiver session against the in-process fake phone (synthetic data, no radio).
+fn fake_session(args: &[String]) -> ExitCode {
+    let gate = match acknowledged_gate(args) {
+        Ok(g) => g,
+        Err(c) => return c,
+    };
+    let mode = match gate.permit() {
+        Ok(m) => m,
+        Err(e) => {
+            println!("Gate refused: {e:?}");
+            return ExitCode::from(3);
+        }
+    };
+    let behaviour = match flag_value(args, "--behaviour").as_deref() {
+        None | Some("honest") => Behaviour::Honest,
+        Some("wrong-code") => Behaviour::WrongCode,
+        Some("garbage-m2") => Behaviour::GarbageM2,
+        Some("tamper-m4") => Behaviour::TamperM4,
+        Some("tamper-secret") => Behaviour::TamperSecret,
+        Some("silent") => Behaviour::Silent,
+        Some("drop-after-m3") => Behaviour::DropAfterM3,
+        Some("duplicate-chunk") => Behaviour::DuplicateChunk,
+        Some("skip-chunk") => Behaviour::SkipChunk,
+        Some("oversize") => Behaviour::OversizeLength,
+        Some(other) => {
+            println!("Unknown behaviour {other}");
+            return ExitCode::from(64);
+        }
+    };
+    let chunk = flag_value(args, "--chunk")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(244)
+        .clamp(20, 244);
+    let notify = args.iter().any(|a| a == "--notify");
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
+    let mut rng = os_rng();
+    let mut rx = match ReceiverSession::new(clock, &mut rng, b"win-receiver", mode.claim_label()) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("Core error: {e:?}");
+            return ExitCode::from(1);
+        }
+    };
+    let code = rx.code().map(str::to_owned).unwrap_or_default();
+    println!("Fake phone: behaviour {behaviour:?}, chunk {chunk}, notify {notify}, mode {mode:?}");
+    let mut phone = FakeSender::new(
+        &code,
+        b"synthetic-secret-not-a-real-password",
+        behaviour,
+        chunk,
+        notify,
+    );
+    report_attempt(run_attempt(&mut phone, &mut rx, &mut rng))
+}
+
+/// Real BLE session: show the code, scan, let the USER choose a row, connect, run one attempt.
+#[cfg(windows)]
+fn ble_receive(args: &[String]) -> ExitCode {
+    use areatm_kagilink_receiver::selection::build_list;
+    let gate = match acknowledged_gate(args) {
+        Ok(g) => g,
+        Err(c) => return c,
+    };
+    let mode = match gate.permit() {
+        Ok(m) => m,
+        Err(e) => {
+            println!("Gate refused: {e:?}");
+            return ExitCode::from(3);
+        }
+    };
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
+    let mut rng = os_rng();
+    let mut rx = match ReceiverSession::new(clock, &mut rng, b"win-receiver", mode.claim_label()) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("Core error: {e:?}");
+            return ExitCode::from(1);
+        }
+    };
+    let code = rx.code().map(str::to_owned).unwrap_or_default();
+    println!("Code (valid 60 s): {code}");
+    println!("Enter it on the phone, press start, and note the KL-XXXX tag the phone shows.");
+    let seconds = flag_value(args, "--seconds")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(10)
+        .clamp(1, 30);
+    let raws = match areatm_kagilink_receiver::ble::scan_advertisements(seconds) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("Scan failed: {e:?}");
+            return ExitCode::from(1);
+        }
+    };
+    let list = build_list(&raws);
+    if list.entries().is_empty() {
+        println!("No KagiLink senders found");
+        return ExitCode::from(1);
+    }
+    for (i, c) in list.entries().iter().enumerate() {
+        match (&c.blocked, &c.tag) {
+            (None, Some(t)) => println!("[{}] KL-{t}  signal: {:?}", i + 1, c.signal),
+            (_, Some(t)) => println!("[{}] KL-{t}  cannot choose ({:?})", i + 1, c.blocked),
+            _ => println!("[{}] (no usable tag)  cannot choose", i + 1),
+        }
+    }
+    let choice = match flag_value(args, "--choose") {
+        Some(v) => v.parse::<usize>().ok(),
+        None => {
+            print!("Pick the row whose tag matches your phone: ");
+            let _ = io::stdout().flush();
+            let mut line = String::new();
+            let _ = io::stdin().lock().read_line(&mut line);
+            line.trim().parse::<usize>().ok()
+        }
+    };
+    let Some(index) = choice.and_then(|n| n.checked_sub(1)) else {
+        println!("No valid row chosen. Nothing was connected.");
+        return ExitCode::from(2);
+    };
+    let target = match list.choose_target(index) {
+        Ok(t) => t,
+        Err(e) => {
+            println!("Refused: {e:?}");
+            return ExitCode::from(2);
+        }
+    };
+    let mut link = match areatm_kagilink_receiver::ble_link::connect(target.key()) {
+        Ok(l) => l,
+        Err(e) => {
+            println!("Connect failed: {e:?}");
+            return ExitCode::from(1);
+        }
+    };
+    report_attempt(run_attempt(&mut link, &mut rx, &mut rng))
 }
 
 #[cfg(windows)]
@@ -204,9 +391,21 @@ fn main() -> ExitCode {
                 ExitCode::from(64)
             }
         }
+        Some("fake-session") => fake_session(&args),
+        Some("ble-receive") => {
+            #[cfg(windows)]
+            {
+                ble_receive(&args)
+            }
+            #[cfg(not(windows))]
+            {
+                println!("ble-receive is Windows only.");
+                ExitCode::from(64)
+            }
+        }
         _ => {
             println!(
-                "usage: kagilink-receiver check | loopback [--accept] | ble-ping [--seconds N] | ble-list [--seconds N] [--choose N]"
+                "usage: kagilink-receiver check | loopback [--accept] | ble-ping [--seconds N] | ble-list [--seconds N] [--choose N] | fake-session [--behaviour B] [--chunk N] [--notify] [--accept] | ble-receive [--seconds N] [--choose N] [--accept]"
             );
             println!("Skeleton only: no BLE, no text entry, synthetic data only.");
             ExitCode::from(64)
