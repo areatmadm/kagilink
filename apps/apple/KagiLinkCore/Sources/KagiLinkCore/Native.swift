@@ -264,6 +264,85 @@ enum Native {
         return (.ok, secret, kind, complete == 1)
     }
 
+    // MARK: BLE chunk codec (ABI v2)
+
+    static let mtypeHandshake: UInt8 = UInt8(KL_MTYPE_HANDSHAKE)
+    static let mtypeChannel: UInt8 = UInt8(KL_MTYPE_CHANNEL)
+
+    /// Returns the chunks (length prefixes removed).
+    static func frameChunk(mtype: UInt8, message: [UInt8], maxChunk: Int) -> (KLStatus, [[UInt8]]) {
+        var count = 0
+        let (st, blob) = withGrowingOutput(initial: 4096) { (out: UnsafeMutablePointer<UInt8>?, len: inout Int) -> Int32 in
+            var outLen = len
+            let status: kl_status_t = message.withUnsafeBufferPointer { (m: UnsafeBufferPointer<UInt8>) -> kl_status_t in
+                kl_frame_chunk(mtype, m.baseAddress, m.count, maxChunk, out, &outLen, &count)
+            }
+            len = outLen
+            return s32(status)
+        }
+        guard st == .ok else { return (st, []) }
+        var chunks: [[UInt8]] = []
+        var off = 0
+        for _ in 0..<count {
+            guard off + 4 <= blob.count else { return (.framing, []) }
+            let b0 = Int(blob[off]), b1 = Int(blob[off + 1]), b2 = Int(blob[off + 2]), b3 = Int(blob[off + 3])
+            let n = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+            off += 4
+            guard off + n <= blob.count else { return (.framing, []) }
+            chunks.append(Array(blob[off..<(off + n)]))
+            off += n
+        }
+        return (.ok, chunks)
+    }
+
+    static func reassemblerNew() -> (KLStatus, OpaquePointer?) {
+        var h: OpaquePointer?
+        let st = kl_reassembler_new(&h)
+        return (KLStatus(rawValue: s32(st)), h)
+    }
+
+    /// Returns whether this chunk completed a message (held inside the handle until `take`).
+    static func reassemblerPush(_ h: OpaquePointer, _ chunk: [UInt8]) -> (KLStatus, Bool) {
+        var complete: UInt8 = 0
+        let st: kl_status_t = chunk.withUnsafeBufferPointer { (c: UnsafeBufferPointer<UInt8>) -> kl_status_t in
+            kl_reassembler_push(h, c.baseAddress, c.count, &complete)
+        }
+        return (KLStatus(rawValue: s32(st)), complete == 1)
+    }
+
+    static func reassemblerTake(_ h: OpaquePointer) -> (KLStatus, UInt8, [UInt8]) {
+        var mtype: UInt8 = 0
+        let (st, data) = withGrowingOutput(initial: 1024) { (out: UnsafeMutablePointer<UInt8>?, len: inout Int) -> Int32 in
+            var outLen = len
+            let status = kl_reassembler_take(h, &mtype, out, &outLen)
+            len = outLen
+            return s32(status)
+        }
+        return (st, mtype, data)
+    }
+
+    static func reassemblerIsDead(_ h: OpaquePointer) -> Bool { kl_reassembler_is_dead(h) == 1 }
+    static func reassemblerFree(_ h: OpaquePointer?) { kl_reassembler_free(h) }
+
+    static func ackChunk(_ seq: UInt8) -> (KLStatus, [UInt8]) {
+        withGrowingOutput(initial: 8) { (out: UnsafeMutablePointer<UInt8>?, len: inout Int) -> Int32 in
+            var outLen = len
+            let status = kl_ack_chunk(seq, out, &outLen)
+            len = outLen
+            return s32(status)
+        }
+    }
+
+    /// Returns the acknowledged sequence number only when the chunk is exactly an ACK chunk.
+    static func parseAck(_ chunk: [UInt8]) -> (KLStatus, UInt8?) {
+        var isAck: UInt8 = 0
+        var seq: UInt8 = 0
+        let st: kl_status_t = chunk.withUnsafeBufferPointer { (c: UnsafeBufferPointer<UInt8>) -> kl_status_t in
+            kl_parse_ack(c.baseAddress, c.count, &isAck, &seq)
+        }
+        return (KLStatus(rawValue: s32(st)), isAck == 1 ? seq : nil)
+    }
+
     static func channelClose(_ c: OpaquePointer) -> KLStatus { KLStatus(rawValue: s32(kl_channel_close(c))) }
     static func channelIsClosed(_ c: OpaquePointer) -> Bool { kl_channel_is_closed(c) == 1 }
     static func channelFree(_ c: OpaquePointer?) { kl_channel_free(c) }
