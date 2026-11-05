@@ -9,11 +9,10 @@ package com.areatm.kagilink.spike
  * only meaningfully on OK (bytes written) and ERR_BUFFER (bytes required); on any other status it
  * is set to 0 and the output array is untouched.
  *
- * Handle ownership: every `*Free` MUST be exclusive. Never call it concurrently with another call
- * on the same handle and never twice. Wrap each handle in an owner that releases it exactly once,
- * for example `val h = AtomicLong(raw)` and `val prev = h.getAndSet(0); if (prev != 0L) free(prev)`
- * once no other thread can be inside a call on it. Use-after-free is undefined behaviour, not an
- * error code (docs/FFI_DESIGN.md: a handle table is required before real secrets).
+ * Handle ownership: a handle is an opaque library token (not an address), so a stale, doubled or
+ * racing free is an error code or a no-op, never memory corruption (docs/FFI_DESIGN.md, "Handle
+ * registry"). Still wrap each handle in an owner that releases it exactly once, for example
+ * `val h = AtomicLong(raw)` and `val prev = h.getAndSet(0); if (prev != 0L) free(prev)`.
  */
 object Native {
     const val EXPECTED_ABI = 2

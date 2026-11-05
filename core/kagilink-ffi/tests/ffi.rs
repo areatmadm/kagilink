@@ -1147,3 +1147,351 @@ fn freeing_with_held_data_and_null_is_safe() {
         kl_receiver_free(r);
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// Handle registry: stale / doubled / racing / forged handles (docs/FFI_DESIGN.md).
+// Handles are tokens, never dereferenced, so none of these may crash.
+// ---------------------------------------------------------------------------------------
+
+/// Calls every handle-taking export with `bad` as each handle type; none may succeed.
+unsafe fn assert_all_handles_rejected(bad: usize) {
+    unsafe {
+        let r = bad as *mut kl_receiver_t;
+        let s = bad as *mut kl_sender_t;
+        let c = bad as *mut kl_channel_t;
+        let h = bad as *mut kl_reassembler_t;
+        let mut buf = [0u8; 600];
+        let mut n = buf.len();
+        assert_eq!(kl_receiver_code(r, buf.as_mut_ptr(), &mut n), KL_ERR_NULL);
+        n = buf.len();
+        assert_eq!(
+            kl_receiver_begin_attempt(r, buf.as_mut_ptr(), &mut n),
+            KL_ERR_NULL
+        );
+        n = buf.len();
+        assert_eq!(
+            kl_receiver_handle_m2(r, buf.as_ptr(), 4, buf.as_mut_ptr(), &mut n),
+            KL_ERR_NULL
+        );
+        let mut ch = null_mut();
+        assert_eq!(kl_receiver_finish(r, buf.as_ptr(), 4, &mut ch), KL_ERR_NULL);
+        assert!(ch.is_null());
+        n = buf.len();
+        let mut tx = null_mut();
+        let m3 = [0u8; 4];
+        assert_eq!(
+            kl_sender_finish(s, m3.as_ptr(), 4, buf.as_mut_ptr(), &mut n, &mut tx),
+            KL_ERR_NULL
+        );
+        assert_eq!(kl_channel_approve_one_transfer(c), KL_ERR_NULL);
+        assert_eq!(kl_channel_set_ready_to_receive(c, 1), KL_ERR_NULL);
+        let (mut out, mut on, mut cnt) = ([0u8; 256], 256usize, 0usize);
+        assert_eq!(
+            kl_channel_seal(
+                c,
+                SECRET,
+                b"x".as_ptr(),
+                1,
+                64,
+                out.as_mut_ptr(),
+                &mut on,
+                &mut cnt
+            ),
+            KL_ERR_NULL
+        );
+        on = 256;
+        let (mut k, mut d) = (0u8, 0u8);
+        assert_eq!(
+            kl_channel_open_fragment(
+                c,
+                b"x".as_ptr(),
+                1,
+                out.as_mut_ptr(),
+                &mut on,
+                &mut k,
+                &mut d
+            ),
+            KL_ERR_NULL
+        );
+        assert_eq!(kl_channel_close(c), KL_ERR_NULL);
+        assert_eq!(kl_channel_is_closed(c), 1);
+        let mut done = 0u8;
+        assert_eq!(
+            kl_reassembler_push(h, b"x".as_ptr(), 1, &mut done),
+            KL_ERR_NULL
+        );
+        let mut mt = 0u8;
+        on = 256;
+        assert_eq!(
+            kl_reassembler_take(h, &mut mt, out.as_mut_ptr(), &mut on),
+            KL_ERR_NULL
+        );
+        assert_eq!(kl_reassembler_is_dead(h), 1);
+        // Frees of garbage are harmless no-ops.
+        kl_receiver_free(r);
+        kl_sender_free(s);
+        kl_channel_free(c);
+        kl_reassembler_free(h);
+    }
+}
+
+#[test]
+fn double_free_and_use_after_free_are_errors_not_ub() {
+    unsafe {
+        let (r, s, rx, tx) = handshake();
+        let h = new_reasm();
+        kl_receiver_free(r);
+        kl_sender_free(s);
+        kl_channel_free(rx);
+        kl_channel_free(tx);
+        kl_reassembler_free(h);
+        // Second and third frees: harmless.
+        for _ in 0..2 {
+            kl_receiver_free(r);
+            kl_sender_free(s);
+            kl_channel_free(rx);
+            kl_channel_free(tx);
+            kl_reassembler_free(h);
+        }
+        // Every use of a dead token is an error, per handle kind.
+        let mut buf = [0u8; 16];
+        let mut n = buf.len();
+        assert_eq!(kl_receiver_code(r, buf.as_mut_ptr(), &mut n), KL_ERR_NULL);
+        assert_eq!(kl_channel_approve_one_transfer(rx), KL_ERR_NULL);
+        assert_eq!(kl_channel_close(tx), KL_ERR_NULL);
+        assert_eq!(kl_channel_is_closed(tx), 1);
+        let mut done = 0u8;
+        assert_eq!(
+            kl_reassembler_push(h, b"x".as_ptr(), 1, &mut done),
+            KL_ERR_NULL
+        );
+        assert_eq!(kl_reassembler_is_dead(h), 1);
+        let mut ch = null_mut();
+        let mut m4 = [0u8; 64];
+        let mut n4 = m4.len();
+        assert_eq!(
+            kl_sender_finish(s, b"abcd".as_ptr(), 4, m4.as_mut_ptr(), &mut n4, &mut ch),
+            KL_ERR_NULL
+        );
+        assert!(ch.is_null());
+    }
+}
+
+#[test]
+fn wrong_type_token_is_rejected_and_not_freed() {
+    unsafe {
+        let (r, s, rx, tx) = handshake();
+        // Use each handle as another type: error, and the free is a no-op.
+        let as_chan = r as usize as *mut kl_channel_t;
+        assert_eq!(kl_channel_close(as_chan), KL_ERR_NULL);
+        kl_channel_free(as_chan);
+        let as_recv = rx as usize as *mut kl_receiver_t;
+        let mut buf = [0u8; 16];
+        let mut n = buf.len();
+        assert_eq!(
+            kl_receiver_code(as_recv, buf.as_mut_ptr(), &mut n),
+            KL_ERR_NULL
+        );
+        kl_receiver_free(as_recv);
+        kl_sender_free(rx as usize as *mut kl_sender_t);
+        kl_reassembler_free(tx as usize as *mut kl_reassembler_t);
+        // The real objects are untouched and still usable.
+        assert_eq!(kl_channel_is_closed(rx), 0);
+        assert_eq!(kl_channel_is_closed(tx), 0);
+        n = buf.len();
+        // The receiver finished its handshake, so its code is consumed (not a NULL error).
+        assert_eq!(
+            kl_receiver_code(r, buf.as_mut_ptr(), &mut n),
+            KL_ERR_NOT_ACTIVE
+        );
+        kl_channel_free(rx);
+        kl_channel_free(tx);
+        kl_sender_free(s);
+        kl_receiver_free(r);
+    }
+}
+
+#[test]
+fn forged_and_garbage_tokens_never_dereference() {
+    unsafe {
+        // Keep live objects so the registry has real slots.
+        let (r, s, rx, tx) = handshake();
+        let local = 0u64;
+        let stack_addr = &local as *const u64 as usize;
+        let boxed = Box::new([0u8; 64]);
+        let heap_addr = boxed.as_ptr() as usize;
+        let live = [r as usize, s as usize, rx as usize, tx as usize];
+        for bad in [
+            1usize,
+            2,
+            0x10,
+            0x1000,
+            0xdead_beef,
+            usize::MAX,
+            usize::MAX - 1,
+            usize::MAX / 2,
+            1usize << (usize::BITS - 1),
+            stack_addr,
+            heap_addr,
+            // live tokens with a high (generation) bit flipped. Index-bit flips are NOT used:
+            // they can legitimately alias another live object (tests share the registry).
+            (rx as usize) ^ (1usize << (usize::BITS - 5)),
+            (tx as usize) ^ (1usize << (usize::BITS - 3)),
+        ] {
+            if live.contains(&bad) {
+                continue;
+            }
+            assert_all_handles_rejected(bad);
+        }
+        assert_all_handles_rejected(0);
+        // None of that disturbed the live objects.
+        assert_eq!(kl_channel_is_closed(rx), 0);
+        assert_eq!(kl_channel_is_closed(tx), 0);
+        drop(boxed);
+        kl_channel_free(rx);
+        kl_channel_free(tx);
+        kl_sender_free(s);
+        kl_receiver_free(r);
+    }
+}
+
+#[test]
+fn token_reuse_after_free_does_not_resolve_to_new_object() {
+    unsafe {
+        let mut old: Vec<usize> = Vec::new();
+        for _ in 0..64 {
+            let h = new_reasm();
+            assert!(!old.contains(&(h as usize)), "token repeated while stale");
+            // Every earlier (freed) token must stay dead while the slot is reused.
+            for &t in &old {
+                let mut done = 0u8;
+                assert_eq!(
+                    kl_reassembler_push(t as *mut kl_reassembler_t, b"x".as_ptr(), 1, &mut done),
+                    KL_ERR_NULL
+                );
+            }
+            // The new object is alive.
+            assert_eq!(kl_reassembler_is_dead(h), 0);
+            kl_reassembler_free(h);
+            // A stale free of an old token must not free a newer object in the reused slot.
+            let h2 = new_reasm();
+            for &t in &old {
+                kl_reassembler_free(t as *mut kl_reassembler_t);
+            }
+            assert_eq!(kl_reassembler_is_dead(h2), 0);
+            kl_reassembler_free(h2);
+            old.push(h as usize);
+            old.push(h2 as usize);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Tok(usize);
+
+#[test]
+fn concurrent_calls_and_free_on_one_token_do_not_crash_or_deadlock() {
+    for _ in 0..200 {
+        unsafe {
+            let (r, s, rx, tx) = handshake();
+            assert_eq!(kl_channel_set_ready_to_receive(rx, 1), KL_OK);
+            let t = Tok(tx as usize);
+            let rxt = Tok(rx as usize);
+            let mut workers = Vec::new();
+            for i in 0..3u8 {
+                workers.push(std::thread::spawn(move || {
+                    for _ in 0..20 {
+                        let c = t.0 as *mut kl_channel_t;
+                        let mut out = vec![0u8; 4096];
+                        let mut n = out.len();
+                        let mut cnt = 0usize;
+                        let rc = kl_channel_approve_one_transfer(c);
+                        assert!(
+                            matches!(rc, KL_OK | KL_ERR_NULL | KL_ERR_BUSY | KL_ERR_CLOSED),
+                            "approve {rc:?}"
+                        );
+                        let rc = kl_channel_seal(
+                            c,
+                            SECRET,
+                            b"synthetic".as_ptr(),
+                            9,
+                            64,
+                            out.as_mut_ptr(),
+                            &mut n,
+                            &mut cnt,
+                        );
+                        assert!(
+                            matches!(
+                                rc,
+                                KL_OK
+                                    | KL_ERR_NULL
+                                    | KL_ERR_BUSY
+                                    | KL_ERR_CLOSED
+                                    | KL_ERR_NOT_APPROVED
+                            ),
+                            "seal {rc:?}"
+                        );
+                        let _ = kl_channel_is_closed(c);
+                        if i == 2 {
+                            let _ = kl_channel_close(c);
+                        }
+                    }
+                }));
+            }
+            // Two racing frees of the same token plus a racing use/free of the other channel.
+            for _ in 0..2 {
+                workers.push(std::thread::spawn(move || {
+                    kl_channel_free(t.0 as *mut kl_channel_t);
+                }));
+            }
+            workers.push(std::thread::spawn(move || {
+                let c = rxt.0 as *mut kl_channel_t;
+                let _ = kl_channel_is_closed(c);
+                kl_channel_free(c);
+            }));
+            for w in workers {
+                w.join().expect("worker panicked");
+            }
+            // After the dust settles both tokens are dead.
+            assert_eq!(kl_channel_is_closed(tx), 1);
+            assert_eq!(kl_channel_close(tx), KL_ERR_NULL);
+            assert_eq!(kl_channel_close(rx), KL_ERR_NULL);
+            kl_sender_free(s);
+            kl_receiver_free(r);
+        }
+    }
+}
+
+#[test]
+fn concurrent_reassembler_hammer_with_free() {
+    for _ in 0..200 {
+        unsafe {
+            let h = new_reasm();
+            let t = Tok(h as usize);
+            let mut ws = Vec::new();
+            for _ in 0..3 {
+                ws.push(std::thread::spawn(move || {
+                    for _ in 0..50 {
+                        let h = t.0 as *mut kl_reassembler_t;
+                        let mut done = 0u8;
+                        let rc = kl_reassembler_push(h, [0u8].as_ptr(), 1, &mut done);
+                        assert_ne!(rc, KL_OK);
+                        let _ = kl_reassembler_is_dead(h);
+                        let mut mt = 0u8;
+                        let mut buf = [0u8; 8];
+                        let mut n = buf.len();
+                        let _ = kl_reassembler_take(h, &mut mt, buf.as_mut_ptr(), &mut n);
+                    }
+                }));
+            }
+            ws.push(std::thread::spawn(move || {
+                kl_reassembler_free(t.0 as *mut kl_reassembler_t);
+            }));
+            for w in ws {
+                w.join().expect("worker panicked");
+            }
+            assert_eq!(kl_reassembler_is_dead(h), 1);
+            kl_reassembler_free(h);
+        }
+    }
+}
