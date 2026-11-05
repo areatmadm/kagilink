@@ -292,3 +292,22 @@ Owner decisions (interview), superseding the self-hosted-runner idea in D016:
   build iOS, macOS or Windows targets (no Xcode or MSVC). It does not replace CI and its results
   must be labelled as cloud-sandbox runs.
 - Not done: no workflow files exist yet; nothing here is implemented.
+
+## D020 — Where target build verification runs, 2026-11-05
+
+Owner decisions (interview), implementing D016 precondition 1 within D019:
+
+- Scope: compile and run the core tests on each target (not compile-only), so OS-dependent
+  parts such as `getrandom` are exercised.
+- iOS (aarch64-apple-ios, simulator targets): MacBook, run manually by the macOS session only.
+  Claude Cloud cannot do this (Linux, no Xcode).
+- Android (aarch64-linux-android): GitHub-hosted Linux runner with a pinned NDK. If GitHub
+  Actions is unavailable, the Claude Cloud session is the backup, started only on the owner's or
+  lead's instruction (D019); its results are labelled cloud-sandbox runs.
+- Limitation to settle before relying on this: a Linux runner cannot execute aarch64 Android test
+  binaries by itself. Running them needs an emulator (an x86_64 emulator tests a different target
+  from aarch64) or a physical device, which only the Android session's PC has. Until decided, a
+  hosted Linux run proves compilation for the Android target only; test execution on Android is
+  not claimed.
+- Windows (x86_64-pc-windows-msvc) already runs natively on the lead session's machine.
+- Nothing has been run for iOS or Android yet; no workflow files exist.
