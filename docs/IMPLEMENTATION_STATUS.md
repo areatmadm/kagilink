@@ -145,6 +145,21 @@ was newly created or already existed, or whether the device registration changed
 issued and no project file was edited. The project's `CODE_SIGNING_ALLOWED = NO` change is still not
 started. The owner should check the Apple developer account for any new profile or device entry.
 
+### Android target verification addendum — 2026-11-05 (reported by the Android session)
+
+Produced and reported by the Android session on a physical device; the lead session did not re-run
+it. Synthetic data only; owner instructed the run and approved the toolchain install.
+
+| Check | Reported outcome |
+|---|---|
+| Core test binaries built for aarch64-linux-android (Rust 1.92.0, NDK 29.0.14206865 clang, release, locked) from commit 9027f43 in an isolated worktree | PASS (build) |
+| Run on a physical Samsung SM-S921N, Android 16 (SDK 36), arm64-v8a, one directory under /data/local/tmp, removed afterwards; no root, no signing change, no app install | PASS: unit 29/29, handshake 38/38, mutation 10/10, 0 failures, 0 not run |
+| What this covers | real aarch64 and Android's bionic libc, including OS randomness through getrandom |
+| What it does not cover | StrongBox/Keystore behaviour, the 7 CPace draft vectors, the 9 FFI tests and the model tests on the device, BLE, and the manual device attestation question |
+
+D016 precondition 1 (target build verification) is now met for iOS (device), Android (device) and the
+aarch64 qemu job, within the limits above. The iOS simulator was deliberately not used (owner decision).
+
 ## Next gates and limitations
 
 1. Run the built probe on a normal medium-integrity desktop and record results;
