@@ -636,3 +636,8 @@ Indicate: RESULT 11 B received, MTU 517, 3 chunks of 244 B, 3 send callbacks and
 3 callbacks and 0 failures (mean 5.3 ms, max 7.3 ms), 3 app ACKs, advertise to connect 7492 ms, connect to CCCD 2184 ms. No errors;
 MTU history [517] in both modes; numbers match the pre-codec build within noise. Not measured: RPA rotation, timeouts, wrong code,
 tampering, disconnect paths. One run per mode.
+
+Windows side of the two Android runs (owner-run `ble-receive`, pick row 1, outputs owner-pasted): both printed
+"Transfer OK: 30 bytes received in 1 fragments" (tags in the list showed signal Medium for the first run and Weak for the second).
+The mapping of each output to Indicate or Notify+ACK was not stated. With this, the Android retest is confirmed on both ends:
+PC output and phone log agree (30 B received on the PC, 11 B RESULT on the phone). Still one run per mode.
