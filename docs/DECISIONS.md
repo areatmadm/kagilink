@@ -309,5 +309,14 @@ Owner decisions (interview), implementing D016 precondition 1 within D019:
   from aarch64) or a physical device, which only the Android session's PC has. Until decided, a
   hosted Linux run proves compilation for the Android target only; test execution on Android is
   not claimed.
+- Resolution of the limitation (owner interview, same day): Android test execution uses two
+  complementary methods. (a) Physical device over adb, run manually by the Android session on
+  its PC: the aarch64 test binary is pushed to a single directory under /data/local/tmp, run,
+  and removed; synthetic data only, no root, no signing change, no app install, USB debugging
+  required, and the owner instructs when to run. This is the only method that covers both real
+  aarch64 and Android's bionic libc. (b) aarch64 emulation with qemu on the hosted Linux runner,
+  automatic: it checks aarch64 code generation but runs a normal Linux libc, so it does not prove
+  Android behaviour. An x86_64 emulator was not chosen (different target, different AES/SHA
+  acceleration paths). A pass in (b) alone must not be reported as Android-verified.
 - Windows (x86_64-pc-windows-msvc) already runs natively on the lead session's machine.
 - Nothing has been run for iOS or Android yet; no workflow files exist.
