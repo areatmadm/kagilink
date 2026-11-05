@@ -76,6 +76,12 @@ must not let strangers cheaply burn the receiver's failure budget.
   is three (D014).
 * A disconnect at any time ends the session on both sides. Reconnecting always starts a fresh session
   (fresh code, fresh keys, fresh tag); nothing resumes.
+* Receiver scanning rules from the Apple review: the scan MUST be active (on Windows
+  `BluetoothLEScanningMode::Active`; a passive scan can miss scan responses), the tag is read from the
+  advertisement data (`LocalName` or service data), never from a cached GAP/device name, and duplicate
+  tags are detected by comparing the tag string, not a platform peripheral identifier (on Apple an
+  identifier is a host-local random UUID, not an address). Live signal-strength updates need duplicate
+  advertisements to be delivered (CoreBluetooth `AllowDuplicates`; on Windows every Received event).
 * Platform notes (unverified on devices): Windows can read both `LocalName` and `DataSections` from a
   received advertisement, but whether the scan response is merged into the same event needs a real
   measurement. iOS must be in the foreground to advertise its local name. Android's advertising address
@@ -119,7 +125,11 @@ Receiver-side rules (the codec enforces them and fails closed):
   LAST before the length is reached, or the length reached without LAST, is an error;
 * any error closes the reassembler for good; the connection is dropped and the session discarded.
 The smallest usable ATT value is 20 bytes (MTU 23): header 2 + FIRST prefix 3 + at least 1 data byte.
-The sender chooses chunk size = min(ATT MTU - 3, 244); both sides request the largest MTU the platform
+The sender chooses chunk size = min(ATT MTU - 3, 244); on Apple platforms the ATT MTU - 3 value is
+`maximumUpdateValueLength` (peripheral) and `maximumWriteValueLength(for: .withoutResponse)` (central);
+`maximumWriteValueLength(for: .withResponse)` can be far larger because of long writes and MUST NOT be
+used for chunk sizing. The TX characteristic on Apple peripherals declares `.indicate` only (not
+`.notify` as well), and every write request received on RX must be answered; both sides request the largest MTU the platform
 allows but must work at 23.
 
 ## 6. Timing and lifecycle
@@ -150,6 +160,8 @@ ordering; disconnect at each step; two advertisers and a copied tag; wrong code;
 Windows `GattSession` behaviour; bonded-device interference.
 
 ## 9. Resolved and open questions
+
+macOS review (2026-11-06, from Apple documentation, no device test): CoreBluetooth lets an app set only the local name and service UUIDs (the system places the name, typically in the scan response, and only while the app is in the foreground); there is no per-indication confirmation callback, only subscription events and a send-queue-ready callback; the app cannot request an MTU; macOS peripheral behaviour of the name may differ from iOS and needs measuring; the Windows central must scan actively.
 
 Android review (2026-11-06, from API knowledge, no device test): local name is not usable on Android, so the tag may also travel as Service Data; Indicate with confirm=true and the onNotificationSent callback are available, with the next send only after that callback; MTU exchange is started by the central; default ATT MTU 23, Android maximum 517; no long (prepared) writes are needed because chunks fit in MTU-3.
 
