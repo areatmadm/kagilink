@@ -55,11 +55,31 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         const val CCCD_WAIT_MS = 5_000L
         const val MESSAGE_MS = 5_000L
         const val ACK_MS = 2_000L
+        const val FAULT_DELAY_MS = 6_000L
+        const val FAULT_CHUNK = 32 // small chunks so that M2 has >= 3 chunks for the chunk faults
         const val MAX_CHUNK_CAP = 244
         val SYNTHETIC_SECRET = "synthetic-secret-android-kl-v1".toByteArray()
         val DEVICE_ID = "android-spike".toByteArray()
         val PURPOSE = "synthetic-login".toByteArray()
         val CLAIMS = "mode=spike".toByteArray()
+    }
+
+    /**
+     * Test-only fault injection (default NONE, honoured only in debuggable builds, reset to NONE
+     * after every session). Synthetic data only. Expected receiver reaction: docs/BLE_GATT_SPEC.md
+     * and apps/android/peripheral/FAULT_INJECTION.md.
+     */
+    enum class Fault(val label: String) {
+        NONE("none (normal)"),
+        GARBAGE_M2("a: garbage bytes instead of M2"),
+        TAMPER_M4("b: M4 with one byte flipped"),
+        DROP_AFTER_M3("c: disconnect right after M3"),
+        CHUNK_DUP("d1: duplicate a chunk of M2"),
+        CHUNK_DROP("d2: drop a chunk of M2"),
+        CHUNK_SWAP("d3: swap two chunks of M2"),
+        NO_RESPONSE("e1: never answer M1"),
+        DELAY_M2("e2: answer M1 after 6 s (>5 s)"),
+        TAMPER_SECRET("f: SECRET fragment with one byte flipped"),
     }
 
     private enum class State { IDLE, ADVERTISING, AWAIT_M1, AWAIT_M3, CHANNEL, DONE }
@@ -104,12 +124,19 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
     private var acksReceived = 0
     private var mtuHistory = mutableListOf<Int>()
     private var advTag = ""
+    private var fault = Fault.NONE
 
     /** [codeDigits] is wiped by this class once used or on cleanup. */
-    fun start(codeDigits: ByteArray, notifyMode: Boolean) = h.post {
+    fun start(codeDigits: ByteArray, notifyMode: Boolean, requested: Fault = Fault.NONE) = h.post {
         if (state != State.IDLE) { ui.onStatus("already running"); return@post }
         code = codeDigits
         useIndicate = !notifyMode
+        val debuggable = (ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        fault = if (debuggable) requested else Fault.NONE
+        if (fault != Fault.NONE) {
+            Log.w(TAG, "FAULT INJECTION ARMED: ${fault.name} (test build, synthetic data)")
+            ui.onStatus("FAULT INJECTION ARMED: ${fault.label}")
+        }
         val adapter = manager.adapter
         if (adapter == null || !adapter.isEnabled) { finish("Bluetooth is off"); return@post }
         advertiser = adapter.bluetoothLeAdvertiser
@@ -153,7 +180,12 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
             val flen = ((sealed[off].toInt() and 0xff) shl 24) or ((sealed[off + 1].toInt() and 0xff) shl 16) or
                 ((sealed[off + 2].toInt() and 0xff) shl 8) or (sealed[off + 3].toInt() and 0xff)
             off += 4
-            sendMessage(Framing.MTYPE_CHANNEL, sealed.copyOfRange(off, off + flen))
+            val frag = sealed.copyOfRange(off, off + flen)
+            if (fault == Fault.TAMPER_SECRET && i == 0) {
+                frag[frag.size / 2] = (frag[frag.size / 2].toInt() xor 0x01).toByte()
+                Log.i(TAG, "fault injected: SECRET fragment $i one byte flipped")
+            }
+            sendMessage(Framing.MTYPE_CHANNEL, frag)
             off += flen
         }
         Native.secureWipe(sealed)
@@ -275,9 +307,28 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
 
     private fun chunkSize() = minOf(mtu - 3, MAX_CHUNK_CAP)
 
-    private fun sendMessage(mtype: Int, message: ByteArray) {
-        for (c in Framing.chunkMessage(mtype, message, chunkSize())) queue.addLast(c)
+    private fun sendMessage(mtype: Int, message: ByteArray, chunkOverride: Int? = null,
+                            mutate: ((MutableList<ByteArray>) -> Unit)? = null) {
+        val chunks = Framing.chunkMessage(mtype, message, chunkOverride ?: chunkSize()).toMutableList()
+        mutate?.invoke(chunks)
+        for (c in chunks) queue.addLast(c)
         pump()
+    }
+
+    /** Sends M2, applying the chunk-level faults (d1..d3) which need at least 3 chunks. */
+    private fun sendM2(m2: ByteArray) {
+        when (fault) {
+            Fault.CHUNK_DUP, Fault.CHUNK_DROP, Fault.CHUNK_SWAP -> sendMessage(Framing.MTYPE_HANDSHAKE, m2, FAULT_CHUNK) { c ->
+                if (c.size < 3) { Log.w(TAG, "fault ${fault.name} not injected: only ${c.size} chunks"); return@sendMessage }
+                when (fault) {
+                    Fault.CHUNK_DUP -> c.add(2, c[1].copyOf())
+                    Fault.CHUNK_DROP -> c.removeAt(1)
+                    else -> { val t = c[1]; c[1] = c[2]; c[2] = t }
+                }
+                Log.i(TAG, "fault injected: ${fault.name} (M2 ${m2.size} bytes in ${c.size} chunks of <=$FAULT_CHUNK)")
+            }
+            else -> sendMessage(Framing.MTYPE_HANDSHAKE, m2)
+        }
     }
 
     private fun pump() {
@@ -327,23 +378,55 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         when {
             m.mtype == Framing.MTYPE_HANDSHAKE && state == State.AWAIT_M1 -> {
                 val c = code ?: run { finish("no code"); return }
+                if (fault == Fault.NO_RESPONSE) {
+                    Native.secureWipe(c); code = null
+                    state = State.AWAIT_M3
+                    Log.i(TAG, "fault injected: M1 received, no M2 will be sent")
+                    ui.onStatus("FAULT e1: M1 received, staying silent")
+                    return
+                }
                 val out = ByteArray(1024); val len = longArrayOf(out.size.toLong()); val hs = LongArray(1)
                 val st = Native.senderStart(c, m.data, DEVICE_ID, PURPOSE, CLAIMS, out, len, hs)
                 Native.secureWipe(c); code = null
                 if (st != Native.OK) { finish("sender_start failed $st"); return }
                 sender = NativeHandle(hs[0], Native::senderFree)
                 state = State.AWAIT_M3
-                sendMessage(Framing.MTYPE_HANDSHAKE, out.copyOf(len[0].toInt()))
-                ui.onStatus("M1 received, M2 sent")
+                var m2 = out.copyOf(len[0].toInt())
+                if (fault == Fault.GARBAGE_M2) {
+                    SecureRandom().nextBytes(m2)
+                    Log.i(TAG, "fault injected: M2 replaced by ${m2.size} random bytes")
+                }
+                if (fault == Fault.DELAY_M2) {
+                    val sess = sessionTimer
+                    ui.onStatus("FAULT e2: M2 delayed ${FAULT_DELAY_MS} ms")
+                    h.postDelayed({
+                        if (sess === sessionTimer && state == State.AWAIT_M3) {
+                            Log.i(TAG, "fault injected: M2 sent after ${FAULT_DELAY_MS} ms")
+                            sendM2(m2)
+                        }
+                    }, FAULT_DELAY_MS)
+                } else {
+                    sendM2(m2)
+                    ui.onStatus("M1 received, M2 sent")
+                }
             }
             m.mtype == Framing.MTYPE_HANDSHAKE && state == State.AWAIT_M3 -> {
+                if (fault == Fault.DROP_AFTER_M3) {
+                    Log.i(TAG, "fault injected: dropping the connection right after M3")
+                    finish("fault c: disconnected right after M3"); return
+                }
                 val out = ByteArray(1024); val len = longArrayOf(out.size.toLong()); val ch = LongArray(1)
                 val st = Native.senderFinish(sender?.get() ?: 0L, m.data, out, len, ch)
                 sender?.close(); sender = null
                 if (st != Native.OK) { finish("sender_finish failed $st (wrong code or tamper)"); return }
                 channel = NativeHandle(ch[0], Native::channelFree)
                 state = State.CHANNEL
-                sendMessage(Framing.MTYPE_HANDSHAKE, out.copyOf(len[0].toInt()))
+                val m4 = out.copyOf(len[0].toInt())
+                if (fault == Fault.TAMPER_M4) {
+                    m4[m4.size / 2] = (m4[m4.size / 2].toInt() xor 0x01).toByte()
+                    Log.i(TAG, "fault injected: M4 one byte flipped")
+                }
+                sendMessage(Framing.MTYPE_HANDSHAKE, m4)
                 ui.onStatus("M3 verified, M4 sent; secure channel open")
                 ui.onApprovalReady()
             }
@@ -378,7 +461,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         central?.let { gatt?.cancelConnection(it) }
         gatt?.close(); gatt = null; central = null
         val avgMs = if (sentCallbacks > 0) latencySumNs / sentCallbacks / 1e6 else 0.0
-        val summary = "${if (ok) "OK" else "ended"}: $reason | mode=${if (useIndicate) "indicate" else "notify+ack"} " +
+        val summary = "${if (ok) "OK" else "ended"}: $reason | fault=${fault.name} mode=${if (useIndicate) "indicate" else "notify+ack"} " +
             "mtu=$mtu(history=$mtuHistory) chunk=${chunkSize()} chunksSent=$chunksSent sentCallbacks=$sentCallbacks " +
             "cbFail=$sentCallbackFailures cbAvg=${"%.1f".format(avgMs)}ms cbMax=${"%.1f".format(latencyMaxNs / 1e6)}ms " +
             "acks=$acksReceived adv->connect=${if (connectMs > 0 && advStartMs > 0) connectMs - advStartMs else -1}ms " +
@@ -392,6 +475,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         mtuHistory = mutableListOf(); sentCallbacks = 0; sentCallbackFailures = 0
         latencySumNs = 0; latencyMaxNs = 0; chunksSent = 0; acksReceived = 0
         advStartMs = 0; connectMs = 0; cccdMs = 0
+        fault = Fault.NONE // never stays armed across sessions
         finishing = false
     }
 }
