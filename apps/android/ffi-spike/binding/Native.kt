@@ -22,6 +22,8 @@ object Native {
     const val ERR_BUFFER = 101
 
     @JvmStatic fun load(absolutePath: String) = System.load(absolutePath)
+    /** For an app that packages libkagilink_jni.so in its APK (jniLibs). */
+    @JvmStatic fun loadFromApk() = System.loadLibrary("kagilink_jni")
 
     @JvmStatic external fun abiVersion(): Int
     @JvmStatic external fun secureWipe(buf: ByteArray?)
