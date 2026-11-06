@@ -562,3 +562,12 @@ identifiers, personal e-mail and key material are never committed; scripts requi
 Enforcement: `tools/check-no-personal-ids.sh` (patterns only, self-testing, prints file:line without the value) runs in the
 `personal-ids` job of `core-hardening.yml`. Limits: it catches the listed patterns, not every personal datum; it does not
 rewrite history; it does not replace review. All agent sessions are told to pull `main` and follow it.
+
+## D029 — Phase 5 RDP/target-input feasibility position, 2026-11-06 (proposed, not adopted)
+
+Status: PROPOSED; needs owner approval, nothing changes until then. Evidence and test plan: docs/PHASE5_RDP_INPUT_FEASIBILITY.md.
+Proposal: (1) RDP, CredUI, the secure desktop and elevated windows remain unsupported and disabled; (2) the receiver may only
+inject input into a window it created itself, for evidence runs; (3) input outcomes use the PROTOCOL.md states, SendInput's return
+value means "input attempted" only, and password-field outcomes are UNKNOWN; (4) promoting any other target class needs the
+section 3 pass criteria (including a separate test RDP server with a throwaway synthetic account) and a new owner decision;
+(5) no UIAccess, elevation, services, drivers, clipboard or secure-desktop workaround is ever sought. D003 and D012 are unchanged.

@@ -730,3 +730,13 @@ Real radio, iPhone 15 Pro with the tamperM4 test build, synthetic code. The same
 tamperSecret mode correctly used 0/3 (D026). Defect found: after 3/3 the receiver still asked "Retry with the same code?" although
 the code was already destroyed (Android printed "The code is no longer active"). Fixed: the receiver now prints that line and ends
 without the retry prompt when the code is inactive. Re-observed after the fix (main 1b44e32, three tamperM4 sessions matched to the phone log): 1/3, 2/3, 3/3, then the "no longer active" line and no retry prompt. Raw phone logs are in the private memory.
+
+## Addendum 2026-11-06: Phase 5 start, RDP/target-input feasibility (docs only)
+
+Added docs/PHASE5_RDP_INPUT_FEASIBILITY.md (dated Microsoft Learn sources, findings table, test plan, fail-closed rules) and proposed
+D029 (not adopted). Proven: only own-window ordinary-edit delivery with exact readback (Rust `input-probe`, owner click). Not proven:
+other apps, UIA ValuePattern, mstsc/CredUI (readback and login proof are impossible without a separate test RDP server, and password
+fields cannot be read back); secure desktop and elevated windows are unsupported. The prebuilt C++ probe `--self-input` at Medium
+integrity (RID 8192, binary of 2026-11-04, not rebuilt) returned `OWNED_EDIT_SYNTHETIC_FAILED_OR_FOCUS_CHANGED` without a user click
+(foreground not granted, nothing sent): inconclusive, not a delivery result. Policy unchanged: RDP/CredUI unsupported, real-secret
+transfer disabled. No RDP session, credential UI, elevation or real secret was used.
