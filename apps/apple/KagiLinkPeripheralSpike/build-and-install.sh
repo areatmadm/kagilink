@@ -13,6 +13,7 @@ usage() {
 [ -n "${DEVICE_UDID-}" ] && [ -n "${TEAM_ID-}" ] && [ -n "${IDENTITY-}" ] || usage
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 core="$here/../KagiLinkCore"
+riskack="$here/../KagiLinkRiskAck/Sources/KagiLinkRiskAck"
 device=$DEVICE_UDID
 team=$TEAM_ID
 identity=$IDENTITY
@@ -26,7 +27,7 @@ rm -rf "$out"; mkdir -p "$out/KLV1Spike.app"
 hdr="$core/Binary/KagiLinkC.xcframework/ios-arm64/Headers"
 xcrun --sdk iphoneos swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-ios18.0 \
     $flags -module-name KLV1Spike -I "$hdr" -Xcc "-fmodule-map-file=$hdr/module.modulemap" \
-    "$here"/Sources/*.swift "$core/Sources/KagiLinkCore/Native.swift" "$core/Sources/KagiLinkCore/KagiLink.swift" \
+    "$here"/Sources/*.swift "$riskack"/*.swift "$core/Sources/KagiLinkCore/Native.swift" "$core/Sources/KagiLinkCore/KagiLink.swift" \
     "$core/Binary/KagiLinkC.xcframework/ios-arm64/libareatm_kagilink_ffi.a" \
     -o "$out/KLV1Spike.app/KLV1Spike"
 cp "$here/Info.plist" "$out/KLV1Spike.app/Info.plist"
