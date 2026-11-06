@@ -88,6 +88,20 @@ fn find_characteristic(
 /// Connect to the advertiser the user chose, discover KL-V1 and enable Indicate (preferred) or
 /// Notify on TX before anything is written.
 pub fn connect(address: u64) -> Result<WinGattLink, ConnectError> {
+    // A second connection to the same phone right after a failed attempt can find Windows still holding the
+    // previous link (field case: repeat attempt with the same code gave Gatt(Unreachable) after the in-call
+    // discovery retries). On a GATT-level failure, drop everything (the failed attempt's objects are released when
+    // `connect_once` returns), wait, and run the whole connect once more.
+    match connect_once(address) {
+        Err(ConnectError::Gatt(_)) => {
+            std::thread::sleep(Duration::from_millis(2500));
+            connect_once(address)
+        }
+        other => other,
+    }
+}
+
+fn connect_once(address: u64) -> Result<WinGattLink, ConnectError> {
     let device = step(
         BluetoothLEDevice::FromBluetoothAddressAsync(address).and_then(|o| o.join()),
         "connect",
