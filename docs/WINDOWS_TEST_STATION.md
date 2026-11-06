@@ -61,6 +61,34 @@ Type `YES` at the risk notice, read the 6-digit code and the `Code created` UTC 
 prints `Failure budget used: n/3` and offers to retry with the same code (type `y`); a code that expires or reaches 3/3 is
 destroyed. The `Attempt started` UTC time lets the phone log be matched by time.
 
+## Android fault-injection harness (`tools/ble-fault-harness.ps1`)
+
+Test-only automation of the Android fault series (`apps/android/peripheral/FAULT_INJECTION.md`) so the 6-digit synthetic
+code is not typed by hand. Works in Windows PowerShell 5.1 and pwsh 7.
+
+Prerequisites: the Android phone is connected to this PC by USB with debugging authorised, the debug test APK is installed,
+`adb` is on PATH (or pass `-Adb`), and the receiver is built (`target\debug\areatm-kagilink-receiver.exe`).
+
+```
+powershell -NoProfile -File tools\ble-fault-harness.ps1 -SelfTest          # parser self test, no phone needed
+powershell -NoProfile -File tools\ble-fault-harness.ps1 -Scenario all      # or e.g. -Scenario "b-indicate,f-notify"
+```
+
+Options: `-SkipRepeat`, `-Serial`, `-Adb`, `-ReceiverExe`, `-WaitBetweenSeconds` (default 5, only between scenarios),
+`-OutFile` (default `ble-fault-report.md` in the current directory; do not commit it), `-PickByRow`. Exit code 0 only if
+every selected scenario passes.
+
+What it automates: opens the phone app (`am start`), then per scenario runs `ble-receive --accept --seconds 6`, reads the
+code, sends it to the phone with a `TEST_START` broadcast through the adb shell's stdin (so the code is not in the PC process
+list or the device logcat), reads the phone's `TEST started tag=KL-XXXX` line from logcat, answers the receiver's pick prompt
+with that tag, answers the retry prompt (`n`, or `y` for `repeat-b3`), and compares the result line and
+`Failure budget used: n/3` with the expectation. It also reports the phone's `TEST ended ... outcome=` line; a
+`TEST start refused` line makes the scenario ERROR. The 60 s code lifetime is not touched. The code is masked in all output.
+
+What it does not automate: the iPhone (the owner still operates it by hand), real secrets, RDP input, anything but the
+Android debug test APK. Synthetic codes only. The report contains the result table and masked receiver result lines (no
+codes, no tags, no device serial).
+
 ## What to report (paste exact text, no screenshots of codes needed)
 
 1. Commit id, `rustc --version`, Windows version, adapter name only if the owner agrees.
