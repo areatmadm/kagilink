@@ -740,3 +740,20 @@ fields cannot be read back); secure desktop and elevated windows are unsupported
 integrity (RID 8192, binary of 2026-11-04, not rebuilt) returned `OWNED_EDIT_SYNTHETIC_FAILED_OR_FOCUS_CHANGED` without a user click
 (foreground not granted, nothing sent): inconclusive, not a delivery result. Policy unchanged: RDP/CredUI unsupported, real-secret
 transfer disabled. No RDP session, credential UI, elevation or real secret was used.
+
+## Addendum 2026-11-06: macOS receiver spike (Core Bluetooth Central) against the iPhone 15 Pro, reported by the macOS session
+
+Prototype only (`apps/apple/KagiLinkReceiverSpike`): Apple Silicon Mac as BLE Central through the shared Rust core over the C ABI (Swift `Receiver`, `Codec`,
+`FrameReassembler`, `Channel`), synthetic data, real-secret transfer disabled (D012), ad-hoc signed for local use. Same session rules as the Windows
+receiver (60 s code, three failures with D026 counting, 10 s first-chunk wait, 5 s message completion, user-chosen advertiser, no auto-connect). The
+phone tag was typed by a harness acting for the user; the code was shown in the app window only and never logged.
+
+| Scenario (iPhone 15 Pro) | Mac receiver result |
+|---|---|
+| none (normal build) | Transfer OK: 33 bytes received in 1 fragments, budget 0/3 (chunk 244, indicate) |
+| tampered M4, same code, three tries (fault build) | `Core(ConfirmationFailed)` with budget 1/3, 2/3, 3/3, then core `code()` inactive ("no longer active"); the iPhone showed M3 received and M4 flipped for each try |
+| tampered M4, tries too slow for the 60 s code | `Core(Expired)`: operator latency, three earlier runs reached 1/3, 2/3 and the third try started after expiry |
+
+Limits: the budget shown is derived by the Swift driver (the C ABI has no counter query); only these scenarios were run on the Mac receiver, the other fault
+modes were not; the Mac was not tested at ATT MTU 23, with two advertisers or in the background. A Bluetooth permission prompt had to be accepted by the user once.
+macOS app-bundle runs (not signed with a team certificate) say nothing about Developer ID, notarization or Secure Enclave. Nothing here proves device integrity.
