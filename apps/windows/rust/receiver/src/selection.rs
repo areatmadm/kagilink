@@ -237,6 +237,30 @@ impl SelectionList {
         }
     }
 
+    /// Map what the user typed to a row index (0-based): a row number (`2`) or a tag (`KL-AB23` or `AB23`).
+    /// This only translates the user's explicit input; it never picks a row by itself, and a tag that is
+    /// shown twice (duplicate) is not mapped because `choose` refuses it anyway.
+    pub fn index_for_choice(&self, input: &str) -> Option<usize> {
+        let t = input.trim();
+        if let Ok(n) = t.parse::<usize>() {
+            return n.checked_sub(1);
+        }
+        let tag = t.strip_prefix("KL-").unwrap_or(t).to_ascii_uppercase();
+        if !is_valid_tag(&tag) {
+            return None;
+        }
+        let mut found = None;
+        for (i, c) in self.entries.iter().enumerate() {
+            if c.tag.as_deref() == Some(tag.as_str()) {
+                if found.is_some() {
+                    return None; // two rows with the same tag: never guess
+                }
+                found = Some(i);
+            }
+        }
+        found
+    }
+
     /// Like `choose`, but returns the opaque connect handle. Same refusals, same explicit index.
     pub fn choose_target(&self, index: usize) -> Result<ConnectTarget, SelectionError> {
         self.choose(index)?;
@@ -280,6 +304,26 @@ mod tests {
             raw(2, Some("KL-AB23"), None, Some(-60)),
         ]);
         assert!(dup.choose_target(0).is_err());
+    }
+
+    #[test]
+    fn typed_choice_maps_row_numbers_and_tags() {
+        let list = build_list(&[
+            raw(1, Some("KL-AB23"), None, Some(-50)),
+            raw(2, Some("KL-CD45"), None, Some(-60)),
+        ]);
+        assert_eq!(list.index_for_choice("1"), Some(0));
+        assert_eq!(list.index_for_choice(" 2 "), Some(1));
+        assert_eq!(list.index_for_choice("0"), None);
+        assert_eq!(list.index_for_choice("KL-CD45"), Some(1));
+        assert_eq!(list.index_for_choice("cd45"), Some(1));
+        assert_eq!(list.index_for_choice("ZZZZ"), None);
+        assert_eq!(list.index_for_choice("KL-CD4"), None);
+        let dup = build_list(&[
+            raw(1, Some("KL-AB23"), None, Some(-50)),
+            raw(2, Some("KL-AB23"), None, Some(-60)),
+        ]);
+        assert_eq!(dup.index_for_choice("AB23"), None);
     }
 
     #[test]
