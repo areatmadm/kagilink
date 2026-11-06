@@ -21,6 +21,8 @@
 .PARAMETER WaitBetweenSeconds  Pause between scenarios only (default 5), never inside a code lifetime.
 .PARAMETER OutFile         Markdown report (default: ble-fault-report.md in the current directory).
 .PARAMETER PickByRow       Answer the pick prompt with the printed row number instead of the tag.
+.PARAMETER RawLog          Append the receiver's raw stdout of every scenario to this file (the 6-digit code is masked,
+                           tags are NOT masked because tags are public; for diagnosing list/pick problems).
 .PARAMETER SelfTest        Run the parser self test only (no adb, no phone, no receiver).
 #>
 [CmdletBinding()]
@@ -33,6 +35,7 @@ param(
     [int]$WaitBetweenSeconds = 5,
     [string]$OutFile = 'ble-fault-report.md',
     [switch]$PickByRow,
+    [string]$RawLog = '',
     [switch]$SelfTest
 )
 
@@ -500,6 +503,12 @@ function Invoke-Scenario {
         if (-not $proc.HasExited) { try { $proc.Kill() } catch {} }
     }
     if ($null -eq $parsed) { $parsed = Parse-ReceiverOutput $outPump.Text }
+    if ($RawLog) {
+        try {
+            $raw = [regex]::Replace($outPump.Text, '(Code \(valid 60 s\): )\d{6}', '${1}******')
+            Add-Content -LiteralPath $RawLog -Value ("=== " + $Def.Name + "`n" + $raw + "`n") -Encoding UTF8
+        } catch { }
+    }
     if (-not $code) { [void]$notes.Add('receiver printed no code') }
     $errText = $errPump.Text
     if ($errText.Trim()) { [void]$notes.Add((Get-MaskedText ('receiver stderr: ' + $errText.Trim().Split("`n")[0]))) }
