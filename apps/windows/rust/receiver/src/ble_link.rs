@@ -39,6 +39,7 @@ pub enum ConnectError {
 pub struct WinGattLink {
     device: BluetoothLEDevice,
     _session: GattSession,
+    service: windows::Devices::Bluetooth::GenericAttributeProfile::GattDeviceService,
     rx: GattCharacteristic,
     tx: GattCharacteristic,
     token: i64,
@@ -202,6 +203,7 @@ fn connect_once(address: u64) -> Result<WinGattLink, ConnectError> {
     Ok(WinGattLink {
         device,
         _session: session,
+        service,
         rx,
         tx,
         token,
@@ -274,6 +276,9 @@ impl GattLink for WinGattLink {
         if !self.closed {
             self.closed = true;
             let _ = self.tx.RemoveValueChanged(self.token);
+            // Close the GATT service too: a live service object keeps the Windows link to the phone up, and a
+            // repeat attempt right after a failed one then found the old link (field case: Gatt(Unreachable)).
+            let _ = self.service.Close();
             // Release the GATT session first so Windows can drop the link instead of keeping it alive.
             let _ = self._session.SetMaintainConnection(false);
             let _ = self._session.Close();

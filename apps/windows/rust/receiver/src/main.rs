@@ -308,6 +308,8 @@ fn ble_receive(args: &[String]) -> ExitCode {
         };
         println!("Attempt started: {}", utc_stamp());
         let result = run_attempt(&mut link, &mut rx, &mut rng);
+        // Release the link now (not after the retry prompt) so Windows can drop its connection to the phone.
+        drop(link);
         println!(
             "Failure budget used: {}/{} (an attempt abandoned after M3 is included)",
             rx.failures_including_open(),
