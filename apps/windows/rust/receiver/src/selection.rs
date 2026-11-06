@@ -103,6 +103,13 @@ impl core::fmt::Debug for ConnectTarget {
     }
 }
 
+/// Trim whitespace and a leading UTF-8 byte-order mark. A parent process that pipes text into the
+/// receiver may start the stream with U+FEFF (field case: Windows PowerShell 5.1 stdin), and Rust's
+/// `trim` does not remove it.
+pub fn clean_input(input: &str) -> &str {
+    input.trim().trim_start_matches('\u{feff}').trim()
+}
+
 /// True if `s` is exactly `TAG_LEN` characters, all from `TAG_ALPHABET` (uppercase, case-sensitive).
 pub fn is_valid_tag(s: &str) -> bool {
     s.chars().count() == TAG_LEN && s.chars().all(|c| TAG_ALPHABET.contains(c))
@@ -241,7 +248,7 @@ impl SelectionList {
     /// This only translates the user's explicit input; it never picks a row by itself, and a tag that is
     /// shown twice (duplicate) is not mapped because `choose` refuses it anyway.
     pub fn index_for_choice(&self, input: &str) -> Option<usize> {
-        let t = input.trim();
+        let t = clean_input(input);
         if let Ok(n) = t.parse::<usize>() {
             return n.checked_sub(1);
         }
@@ -324,6 +331,15 @@ mod tests {
             raw(2, Some("KL-AB23"), None, Some(-60)),
         ]);
         assert_eq!(dup.index_for_choice("AB23"), None);
+    }
+
+    #[test]
+    fn a_leading_byte_order_mark_is_ignored() {
+        let list = build_list(&[raw(1, Some("KL-AB23"), None, Some(-50))]);
+        assert_eq!(list.index_for_choice("\u{feff}KL-AB23\r\n"), Some(0));
+        assert_eq!(list.index_for_choice("\u{feff}1\n"), Some(0));
+        assert_eq!(clean_input("\u{feff} y \r\n"), "y");
+        assert_eq!(clean_input("\u{feff}YES"), "YES");
     }
 
     #[test]
