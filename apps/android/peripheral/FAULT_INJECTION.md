@@ -105,3 +105,15 @@ shell's stdin (verified: the code then appears nowhere in logcat):
 
 The 6-digit code is a short-lived (60 s) synthetic test code, but treat the adb channel as inside the
 owner's trusted PC.
+
+### Screen and lock screen
+
+The app keeps the screen on while it is in front (FLAG_KEEP_SCREEN_ON, no permission). In the debug
+build only, the Activity also turns the screen on and shows itself above the lock screen
+(`setTurnScreenOn`/`setShowWhenLocked`); the keyguard stays locked, nothing is unlocked or bypassed,
+and a PIN is still needed for anything else. The harness must start the Activity itself before the
+broadcast (`adb shell am start -n com.areatm.kagilink.spike.peripheral/.PeripheralActivity`), because
+a broadcast receiver cannot launch an Activity from the background; without an open screen
+TEST_START is refused (`app screen is not open`). Measured on a Galaxy S24 (screen off, keyguard
+showing): `am start` woke the screen, the app was the resumed, focused window with the keyguard still
+showing, and the following TEST_START started a session.
