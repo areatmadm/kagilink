@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug builds only: adb shell (holds DUMP) can start a test session. Absent from release. -->
+        <receiver android:name="com.areatm.kagilink.spike.peripheral.TestStartReceiver"
+            android:exported="true" android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.areatm.kagilink.spike.peripheral.TEST_START" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

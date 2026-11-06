@@ -22,7 +22,7 @@ import com.areatm.kagilink.spike.Native
  * 6-digit code shown by the receiver (a throwaway test code), presses start, and later approves
  * one synthetic SECRET transfer. Not a product UI. Window is FLAG_SECURE.
  */
-class PeripheralActivity : Activity(), PeripheralSession.Listener {
+class PeripheralActivity : Activity(), PeripheralSession.Listener, TestHookHost {
     private lateinit var codeField: EditText
     private lateinit var notifyBox: CheckBox
     private var faultSpinner: Spinner? = null
@@ -41,6 +41,7 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
         Native.loadFromApk()
         check(Native.abiVersion() == Native.EXPECTED_ABI) { "ABI mismatch" }
         session = PeripheralSession(applicationContext, this)
+        TestHookRegistry.host = this
         val pad = (16 * resources.displayMetrics.density).toInt()
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad * 2, pad, pad) }
         col.addView(TextView(this).apply { text = "KagiLink KL-V1 peripheral spike\n(synthetic data only, not a product)"; textSize = 16f })
@@ -133,6 +134,20 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
             if (keepFault?.isChecked != true) faultSpinner?.setSelection(0); showMode()
             startBtn.isEnabled = true; approveBtn.isEnabled = false; tagView.text = "----"
         }
+    }
+
+    override fun onDestroy() { if (TestHookRegistry.host === this) TestHookRegistry.host = null; super.onDestroy() }
+
+    // Debug-only automation entry (the only caller is the debug receiver). Runs on the main thread.
+    override fun testStart(code: ByteArray, notify: Boolean, plan: FaultPlan): String? {
+        val need = arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
+        if (need.any { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }) return "Nearby devices permission not granted"
+        session.stop() // a running session ends first; the new start is queued behind it
+        codeField.text.clear()
+        statusView.text = ""
+        startBtn.isEnabled = false
+        session.start(code, notify, plan) // session wipes `code`
+        return null
     }
 
     override fun onStop() { super.onStop(); session.stop() } // fail closed when backgrounded

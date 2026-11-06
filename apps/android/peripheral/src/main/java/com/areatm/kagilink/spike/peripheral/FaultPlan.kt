@@ -18,6 +18,9 @@ interface FaultPlan {
     fun dropAfterM3(): Boolean
     fun m4(m4: ByteArray): ByteArray
     fun secretFragment(index: Int, frag: ByteArray): ByteArray
+    fun onSessionStart(tag: String, gatt: String, utc: String)
+    fun onSessionEnd(outcome: String, utc: String)
+    fun autoApprove(): Boolean
 }
 
 object NoFaults : FaultPlan {
@@ -33,4 +36,7 @@ object NoFaults : FaultPlan {
     override fun dropAfterM3() = false
     override fun m4(m4: ByteArray) = m4
     override fun secretFragment(index: Int, frag: ByteArray) = frag
+    override fun onSessionStart(tag: String, gatt: String, utc: String) {}
+    override fun onSessionEnd(outcome: String, utc: String) {}
+    override fun autoApprove() = false
 }
