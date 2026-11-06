@@ -5,9 +5,21 @@
 
 .DESCRIPTION
   For each run: starts mstsc.exe against the isolated test VM (192.168.77.0/24 only), waits up to 15 s for the credential
-  prompt (a visible dialog of that mstsc process that holds a password edit control, found by window enumeration plus UI
-  Automation property checks, never by reading any text), requires that dialog to be the foreground window with the password
-  edit focused, then sends the test string with SendInput followed by Enter, and closes mstsc again.
+  prompt, requires it to be the foreground window with a password edit focused, then sends the test string with SendInput
+  followed by Enter, and closes the prompt and mstsc again.
+
+  Prompt detection (class, process name and UI Automation properties only; no localized text is compared or read):
+    1. Primary: a visible top-level window of class 'Credential Dialog Xaml Host' owned by process CredentialUIBroker
+       (what mstsc shows on Windows 11; measured on the owner's host). Refused at start if one already exists.
+    2. Fallback: a visible '#32770' dialog of the started mstsc process.
+  In both cases UI Automation must show a descendant Edit with IsPassword = true, and the focused element must be that edit
+  (same process as the prompt window). Otherwise the run fails closed and nothing is sent.
+
+  -Probe: read-only dry run of the detection. Starts mstsc to the allowed target, waits for the prompt, prints window
+  class / process / foreground state and a compact UIA dump (ControlType, ClassName, AutomationId, IsPassword,
+  HasKeyboardFocus, IsEnabled, IsOffscreen; the names of Edit controls and every edit value are NEVER read or printed),
+  sends no input, then cancels the prompt (UIA Invoke on a cancel-like button, else WM_CLOSE) and closes mstsc. No CSV,
+  no string requested.
 
   Run types:
     Positive         the owner-supplied string (Read-Host -AsSecureString, once, never echoed, never stored, never logged).
@@ -30,6 +42,8 @@
   Memory handling is best effort on a managed runtime: the string lives in a SecureString/BSTR and an unmanaged buffer that
   are zeroed after use; short-lived managed copies of single key events cannot be excluded. No claim of dump immunity.
 
+.PARAMETER Probe
+  Read-only prompt detection dump described above. No input is sent, no string is requested, no report is written.
 .PARAMETER Target
   IPv4 address in 192.168.77.0/24 (default 192.168.77.2). Host names are refused.
 .PARAMETER Runs
@@ -53,6 +67,7 @@ param(
     [ValidateSet('Unicode', 'ScanCode')][string]$Mode = 'Unicode',
     [ValidateRange(0, 500)][int]$NegativeEvery = 5,
     [switch]$NegativeOnly,
+    [switch]$Probe,
     [ValidateRange(35, 600)][int]$PauseSeconds = 40,
     [ValidateRange(8, 30)][int]$PromptTimeoutSeconds = 15,
     [ValidateRange(3, 30)][int]$PostSendSeconds = 8,
@@ -92,13 +107,15 @@ if (-not $onLocalNet) { throw 'Refused: no local interface is in 192.168.77.0/24
 if ($NegativeOnly) { $NegativeEvery = 1 }
 
 # --- report path ---------------------------------------------------------------------------------------------------
-if ([string]::IsNullOrEmpty($ReportPath)) {
-    $ReportPath = Join-Path (Get-Location).Path ('rdp-input-harness-report-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmss') + 'Z.csv')
+if (-not $Probe) {
+    if ([string]::IsNullOrEmpty($ReportPath)) {
+        $ReportPath = Join-Path (Get-Location).Path ('rdp-input-harness-report-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmss') + 'Z.csv')
+    }
+    if ([IO.Path]::GetExtension($ReportPath) -ne '.csv') { throw 'ReportPath must end in .csv' }
+    if (Test-Path -LiteralPath $ReportPath) { throw 'ReportPath already exists; refusing to overwrite.' }
+    $reportDir = Split-Path -Parent ([IO.Path]::GetFullPath($ReportPath))
+    if (-not (Test-Path -LiteralPath $reportDir)) { throw 'Report directory does not exist.' }
 }
-if ([IO.Path]::GetExtension($ReportPath) -ne '.csv') { throw 'ReportPath must end in .csv' }
-if (Test-Path -LiteralPath $ReportPath) { throw 'ReportPath already exists; refusing to overwrite.' }
-$reportDir = Split-Path -Parent ([IO.Path]::GetFullPath($ReportPath))
-if (-not (Test-Path -LiteralPath $reportDir)) { throw 'Report directory does not exist.' }
 
 # --- no leftover mstsc (never touch unrelated processes) -----------------------------------------------------------
 if (@(Get-Process -Name mstsc -ErrorAction SilentlyContinue).Count -gt 0) {
@@ -296,41 +313,129 @@ namespace KlHarness
 '@
 
 # --- helpers -------------------------------------------------------------------------------------------------------
+$XamlClass = 'Credential Dialog Xaml Host'
+$BrokerName = 'CredentialUIBroker'
+
 function Get-MstscWindows([int]$ProcId) {
     @([KlHarness.Native]::TopWindows() | Where-Object { $_.Pid -eq $ProcId -and $_.Visible })
 }
 
-# A visible dialog of the mstsc process that contains a password edit control. Property checks only, no text is read.
+function Get-ProcessNameOf([uint32]$ProcId) {
+    try { return (Get-Process -Id $ProcId -ErrorAction Stop).ProcessName } catch { return '' }
+}
+
+# Visible top-level windows of the credential UI broker's XAML host class (identified by class and process name only).
+function Get-BrokerPromptWindows {
+    $list = @()
+    foreach ($w in [KlHarness.Native]::TopWindows()) {
+        if (-not $w.Visible -or $w.Class -ne $XamlClass) { continue }
+        if ((Get-ProcessNameOf $w.Pid) -ne $BrokerName) { continue }
+        $list += $w
+    }
+    return $list
+}
+
+function Test-IsBrokerPromptHwnd([IntPtr]$H) {
+    if ($H -eq [IntPtr]::Zero) { return $false }
+    if ([KlHarness.Native]::ClassOf($H) -ne $XamlClass) { return $false }
+    return ((Get-ProcessNameOf ([KlHarness.Native]::PidOf($H))) -eq $BrokerName)
+}
+
+# Foreground that is acceptable during a run: the started mstsc, or the broker's credential prompt.
+function Test-ForegroundAllowed([IntPtr]$Fg, [int]$ProcId) {
+    if ($Fg -eq [IntPtr]::Zero) { return $true }
+    if ([KlHarness.Native]::PidOf($Fg) -eq $ProcId) { return $true }
+    return (Test-IsBrokerPromptHwnd $Fg)
+}
+
+function Find-PasswordEdit([IntPtr]$Hwnd) {
+    try {
+        $root = [System.Windows.Automation.AutomationElement]::FromHandle($Hwnd)
+        $cond = New-Object System.Windows.Automation.AndCondition(
+            (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)),
+            (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::IsPasswordProperty, $true)))
+        return $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+    } catch { return $null }
+}
+
+# The credential prompt: primary the broker's XAML host window, fallback a '#32770' dialog of the started mstsc.
+# Both need a UIA password edit (property checks only, no text is read).
 function Find-PasswordPrompt([int]$ProcId) {
+    foreach ($w in (Get-BrokerPromptWindows)) {
+        $pw = Find-PasswordEdit $w.Hwnd
+        if ($null -ne $pw) { return [pscustomobject]@{ Hwnd = $w.Hwnd; Password = $pw; Kind = 'XamlBroker'; OwnerPid = [int]$w.Pid } }
+    }
     foreach ($w in (Get-MstscWindows $ProcId)) {
         if ($w.Class -ne '#32770') { continue }
-        try {
-            $root = [System.Windows.Automation.AutomationElement]::FromHandle($w.Hwnd)
-            $cond = New-Object System.Windows.Automation.AndCondition(
-                (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)),
-                (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::IsPasswordProperty, $true)))
-            $pw = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
-            if ($null -ne $pw) { return [pscustomobject]@{ Hwnd = $w.Hwnd; Password = $pw } }
-        } catch { }
+        $pw = Find-PasswordEdit $w.Hwnd
+        if ($null -ne $pw) { return [pscustomobject]@{ Hwnd = $w.Hwnd; Password = $pw; Kind = 'Dialog32770'; OwnerPid = [int]$w.Pid } }
     }
     return $null
 }
 
-function Test-PasswordFocused($Prompt, [int]$ProcId) {
+function Test-PasswordFocused($Prompt) {
     try {
         $f = [System.Windows.Automation.AutomationElement]::FocusedElement
         if ($null -eq $f) { return $false }
-        if ($f.Current.ProcessId -ne $ProcId) { return $false }
+        if ($f.Current.ProcessId -ne $Prompt.OwnerPid) { return $false }
         return ($f.GetRuntimeId() -join ',') -eq ($Prompt.Password.GetRuntimeId() -join ',')
     } catch { return $false }
+}
+
+# Cancel/close a broker prompt window: UIA Invoke on a Button whose AutomationId contains 'cancel' (not localized), else WM_CLOSE.
+function Close-BrokerPrompts {
+    $state = 'none'
+    foreach ($w in (Get-BrokerPromptWindows)) {
+        $state = 'wm-close'
+        try {
+            $root = [System.Windows.Automation.AutomationElement]::FromHandle($w.Hwnd)
+            $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+            foreach ($b in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)) {
+                if ($b.Current.AutomationId -match 'cancel') {
+                    $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                    $state = 'uia-cancel'
+                    break
+                }
+            }
+        } catch { }
+        if ($state -eq 'wm-close') { [KlHarness.Native]::PostClose($w.Hwnd) }
+    }
+    $until = [DateTime]::UtcNow.AddSeconds(4)
+    while ([DateTime]::UtcNow -lt $until -and @(Get-BrokerPromptWindows).Count -gt 0) {
+        Start-Sleep -Milliseconds 200
+        foreach ($w in (Get-BrokerPromptWindows)) { [KlHarness.Native]::PostClose($w.Hwnd) }
+    }
+    if (@(Get-BrokerPromptWindows).Count -gt 0) { return $state + '+STILL-OPEN' }
+    return $state
+}
+
+# Compact property dump. Edit controls: no Name, no value, no ValuePattern, ever.
+function Write-UiaDump([IntPtr]$Hwnd) {
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($Hwnd)
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    $n = 0
+    foreach ($e in $all) {
+        $n++
+        if ($n -gt 300) { Write-Host '  ... truncated at 300 elements'; break }
+        try {
+            $c = $e.Current
+            $ct = $c.ControlType.ProgrammaticName -replace '^ControlType\.', ''
+            $name = '(name withheld for Edit)'
+            if ($ct -ne 'Edit') { $name = '"' + $c.Name + '"' }
+            Write-Host ('  {0} class={1} id={2} IsPassword={3} Focus={4} Enabled={5} Offscreen={6} name={7}' -f $ct, $c.ClassName, $c.AutomationId, $c.IsPassword, $c.HasKeyboardFocus, $c.IsEnabled, $c.IsOffscreen, $name)
+        } catch { Write-Host '  (element unreadable)' }
+    }
+    Write-Host ('  elements: ' + [Math]::Min($n, 300))
 }
 
 function Close-Mstsc($Proc) {
     if ($null -eq $Proc) { return 'none' }
     try {
-        if ($Proc.HasExited) { return 'exited' }
+        # first the credential prompt (owned by CredentialUIBroker, never killed), then the mstsc windows
+        $promptState = Close-BrokerPrompts
+        if ($Proc.HasExited) { return 'exited (prompt ' + $promptState + ')' }
         foreach ($w in (Get-MstscWindows $Proc.Id)) { [KlHarness.Native]::PostClose($w.Hwnd) }
-        if ($Proc.WaitForExit(8000)) { return 'closed' }
+        if ($Proc.WaitForExit(8000)) { return 'closed (prompt ' + $promptState + ')' }
         # the "disconnect this session?" confirmation: invoke its default (OK, control id 1) button via UI Automation
         foreach ($w in (Get-MstscWindows $Proc.Id)) {
             if ($w.Class -ne '#32770') { continue }
@@ -341,10 +446,10 @@ function Close-Mstsc($Proc) {
                 if ($null -ne $btn) { $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
             } catch { }
         }
-        if ($Proc.WaitForExit(8000)) { return 'closed-after-confirm' }
-        $Proc.Kill()    # only the mstsc.exe this harness started
+        if ($Proc.WaitForExit(8000)) { return 'closed-after-confirm (prompt ' + $promptState + ')' }
+        $Proc.Kill()    # only the mstsc.exe this harness started; CredentialUIBroker is never killed
         $Proc.WaitForExit(5000) | Out-Null
-        return 'forced-kill-of-own-child'
+        return 'forced-kill-of-own-child (prompt ' + (Close-BrokerPrompts) + ')'
     } catch { return 'close-error' }
 }
 
@@ -362,10 +467,57 @@ function New-NegativeBuffer([int]$Len) {
     return $ptr
 }
 
+# --- no foreign credential prompt already open (never act on a prompt this harness did not cause) ----------------------
+if (@(Get-BrokerPromptWindows).Count -gt 0) {
+    throw 'A credential prompt (Credential Dialog Xaml Host) is already open. Close it yourself first; this harness only acts on prompts of its own mstsc.'
+}
+
 # --- operator input and confirmation -------------------------------------------------------------------------------
 Write-Host 'KagiLink RDP input harness (TEST ONLY). Target: ' $Target ' Mode: ' $Mode ' Runs: ' $Runs
 Write-Host ('Host UTC now: ' + [DateTime]::UtcNow.ToString('o') + '  (compare with the VM clock before the study)')
 Write-Host 'Do not touch the keyboard or mouse after starting. Report file: ' $ReportPath
+
+if ($Probe) {
+    Write-Host ('PROBE (read-only, no input is sent). Target: ' + $Target)
+    $go = Read-Host 'Type START to begin (then hands off keyboard and mouse)'
+    if ($go -ne 'START') { throw 'Not started.' }
+    Start-Sleep -Seconds 3
+    $pProc = $null
+    try {
+        $pProc = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\mstsc.exe') -ArgumentList ('/v:' + $Target) -PassThru
+        $deadline = [DateTime]::UtcNow.AddSeconds($PromptTimeoutSeconds)
+        $win = $null
+        while ([DateTime]::UtcNow -lt $deadline -and $null -eq $win) {
+            Start-Sleep -Milliseconds 300
+            if ($pProc.HasExited) { break }
+            $cand = @(Get-BrokerPromptWindows)
+            if ($cand.Count -gt 0) { $win = $cand[0]; Start-Sleep -Milliseconds 700 }   # let the XAML tree populate
+        }
+        Write-Host ('mstsc windows (class only): ' + ((Get-MstscWindows $pProc.Id | ForEach-Object { $_.Class }) -join ', '))
+        if ($null -eq $win) {
+            Write-Host 'PROBE RESULT: no Credential Dialog Xaml Host window of CredentialUIBroker appeared.'
+        } else {
+            $fg = [KlHarness.Native]::Foreground()
+            Write-Host ('window class      : ' + $win.Class)
+            Write-Host ('owner process     : ' + (Get-ProcessNameOf $win.Pid) + ' (pid ' + $win.Pid + ')')
+            Write-Host ('visible           : ' + $win.Visible)
+            Write-Host ('foreground        : ' + ($fg -eq $win.Hwnd))
+            Write-Host 'UIA descendants (Edit names and values are never read):'
+            Write-UiaDump $win.Hwnd
+            $pr = Find-PasswordPrompt $pProc.Id
+            if ($null -eq $pr) {
+                Write-Host 'password edit (IsPassword=true) found : NO  -> a real run would fail closed (PasswordEditNotFound)'
+            } else {
+                Write-Host ('password edit (IsPassword=true) found : YES (' + $pr.Kind + ')')
+                Write-Host ('password edit has keyboard focus      : ' + (Test-PasswordFocused $pr))
+            }
+        }
+    } finally {
+        if ($null -ne $pProc) { Write-Host ('closed: mstsc ' + (Close-Mstsc $pProc)) }
+    }
+    Write-Host 'PROBE done. Nothing was sent, recorded or written.'
+    exit 0
+}
 
 $secure = $null
 if (-not $NegativeOnly) {
@@ -395,15 +547,15 @@ try {
         while ([DateTime]::UtcNow -lt $deadline) {
             Start-Sleep -Milliseconds 200
             $fg = [KlHarness.Native]::Foreground()
-            if ($fg -ne [IntPtr]::Zero -and $fg -ne $startFg -and [KlHarness.Native]::PidOf($fg) -ne $proc.Id) {
-                throw 'ABORT:ForegroundChanged before prompt (a window other than the console or mstsc became foreground)'
+            if ($fg -ne $startFg -and -not (Test-ForegroundAllowed $fg $proc.Id)) {
+                throw 'ABORT:ForegroundChanged before prompt (a window other than the console, mstsc or its credential prompt became foreground)'
             }
             if ($proc.HasExited) { $reason = 'FAIL:MstscExited'; break }
             $prompt = Find-PasswordPrompt $proc.Id
             if ($null -eq $prompt) { continue }
             $row.WindowFound = 'yes'
             if ($fg -ne $prompt.Hwnd) { $reason = 'FAIL:PromptNotForeground'; $prompt = $null; continue }
-            if (-not (Test-PasswordFocused $prompt $proc.Id)) { $reason = 'FAIL:PasswordEditNotFocused'; $prompt = $null; continue }
+            if (-not (Test-PasswordFocused $prompt)) { $reason = 'FAIL:PasswordEditNotFocused'; $prompt = $null; continue }
             break
         }
 
@@ -448,10 +600,10 @@ try {
             while ([DateTime]::UtcNow -lt $end) {
                 Start-Sleep -Milliseconds 250
                 $fg = [KlHarness.Native]::Foreground()
-                if ($fg -ne [IntPtr]::Zero -and [KlHarness.Native]::PidOf($fg) -ne $proc.Id) {
+                if (-not (Test-ForegroundAllowed $fg $proc.Id)) {
                     $row.Outcome = $reason
                     $results.Add([pscustomobject]$row)
-                    throw 'ABORT:ForegroundChanged after input (a window other than mstsc became foreground)'
+                    throw 'ABORT:ForegroundChanged after input (a window other than mstsc or its credential prompt became foreground)'
                 }
             }
         }
