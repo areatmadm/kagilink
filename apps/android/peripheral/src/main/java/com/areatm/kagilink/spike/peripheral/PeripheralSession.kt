@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothGattServer
 import android.bluetooth.BluetoothGattServerCallback
 import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
@@ -87,6 +88,11 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
     private var finishing = false
     private var closeTimer: Runnable? = null
     private var centralConnected = false
+    @Volatile private var sessionId = 0 // bumped per session; callbacks of an older server compare against it
+    private var connEpoch = 0           // bumped per accepted connection (guards the CCCD timer)
+    private val closingWait = mutableSetOf<String>()
+    private fun addr(d: BluetoothDevice) = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(d.address.toByteArray()).take(2).joinToString("") { "%02x".format(it) } // not a secret, never the code
     private class PendingStart(val code: ByteArray, val notify: Boolean, val plan: FaultPlan)
     private var pending: PendingStart? = null
     private var sessionStartMs = 0L
@@ -142,10 +148,12 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         ui.onStatus("session start $utc UTC, tag KL-$advTag")
         plan.onSessionStart(advTag, if (useIndicate) "indicate" else "notify", utc.toString())
         sessionStartMs = SystemClock.elapsedRealtime()
-        val server = manager.openGattServer(ctx, serverCallback)
+        sessionId++
+        val sid = sessionId
+        val server = manager.openGattServer(ctx, serverCallback(sid))
         if (server == null) { finish("openGattServer failed"); return@post }
         gatt = server
-        Log.i(TAG, "gatt server opened t=+${SystemClock.elapsedRealtime() - sessionStartMs}ms tag=KL-$advTag")
+        Log.i(TAG, "gatt server opened sid=$sid t=+${SystemClock.elapsedRealtime() - sessionStartMs}ms tag=KL-$advTag")
         val svc = BluetoothGattService(SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
         svc.addCharacteristic(BluetoothGattCharacteristic(
             RX, BluetoothGattCharacteristic.PROPERTY_WRITE, BluetoothGattCharacteristic.PERMISSION_WRITE))
@@ -197,7 +205,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
                 h.post {
                     advStartMs = SystemClock.elapsedRealtime()
                     ui.onStatus("advertising tag $advTag (service UUID + service data), 60 s")
-                    Log.i(TAG, "adv started t=+${advStartMs - sessionStartMs}ms tag=KL-$advTag tag-len=4 mode=${if (useIndicate) "indicate" else "notify"}")
+                    Log.i(TAG, "adv started sid=$sessionId t=+${advStartMs - sessionStartMs}ms tag=KL-$advTag tag-len=4 mode=${if (useIndicate) "indicate" else "notify"}")
                 }
             }
             override fun onStartFailure(errorCode: Int) { h.post { finish("advertise failed $errorCode") } }
@@ -219,12 +227,19 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
 
     // ---- GATT server -------------------------------------------------------------------------
 
-    private val serverCallback = object : BluetoothGattServerCallback() {
+    private fun serverCallback(sid: Int) = object : BluetoothGattServerCallback() {
+        private fun stale(what: String, d: BluetoothDevice? = null): Boolean {
+            if (sid == sessionId) return false
+            Log.i(TAG, "stale callback ignored: $what cb-sid=$sid current-sid=$sessionId" + (d?.let { " addr=${addr(it)}" } ?: ""))
+            return true
+        }
+
         override fun onServiceAdded(status: Int, service: BluetoothGattService) {
             h.post {
+                if (stale("serviceAdded")) return@post
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     // Advertising starts only after the service is registered (spec: never before ready).
-                    Log.i(TAG, "gatt server ready (service added) t=+${SystemClock.elapsedRealtime() - sessionStartMs}ms tag=KL-$advTag")
+                    Log.i(TAG, "gatt server ready (service added) sid=$sid t=+${SystemClock.elapsedRealtime() - sessionStartMs}ms tag=KL-$advTag")
                     startAdvertising()
                 } else finish("service add failed $status")
             }
@@ -232,46 +247,70 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
 
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             h.post {
-                if (newState == BluetoothGatt.STATE_CONNECTED) {
-                    if (central == null && state == State.ADVERTISING) {
+                if (stale("connState=$newState", device)) return@post
+                val a = addr(device)
+                val up = newState == BluetoothGatt.STATE_CONNECTED
+                Log.i(TAG, "conn sid=$sid addr=$a ${if (up) "connected" else "disconnected"} status=$status state=$state")
+                if (up) {
+                    if (central == null && state == State.ADVERTISING && advStartMs > 0) {
                         central = device
                         centralConnected = true
+                        val epoch = ++connEpoch
                         connectMs = SystemClock.elapsedRealtime()
                         state = State.AWAIT_M1
                         stopAdvertising()
                         ui.onStatus("central connected; waiting for indication enable")
                         val sess = sessionTimer
-                        h.postDelayed({ if (sess === sessionTimer && !cccdEnabled && state != State.IDLE) finish("central did not enable ${if (useIndicate) "indications" else "notifications"} in 5 s") }, CCCD_WAIT_MS)
+                        h.postDelayed({ if (sess === sessionTimer && epoch == connEpoch && !cccdEnabled && central != null && state != State.IDLE) finish("central did not enable ${if (useIndicate) "indications" else "notifications"} in 5 s") }, CCCD_WAIT_MS)
+                    } else if (state == State.ADVERTISING && central == null) {
+                        // A link that is reported before our advertising ran cannot be a fresh connection to this session.
+                        Log.i(TAG, "stale connection before advertising ignored addr=$a")
+                        gatt?.cancelConnection(device)
                     } else {
+                        Log.i(TAG, "extra connection refused addr=$a")
                         gatt?.cancelConnection(device) // at most one connection
                     }
-                } else if (newState == BluetoothGatt.STATE_DISCONNECTED && state == State.CLOSING) {
-                    if (device == central) {
-                        centralConnected = false; closeTimer?.let { h.removeCallbacks(it) }; closeTimer = null; closeServer("central disconnected") }
-                } else if (newState == BluetoothGatt.STATE_DISCONNECTED && device == central) {
-                    centralConnected = false
-                    if (state != State.DONE) finish("central disconnected")
+                } else when {
+                    state == State.CLOSING -> {
+                        closingWait.remove(device.address)
+                        if (device == central) centralConnected = false
+                        if (closingWait.isEmpty()) closeServer("all connections down")
+                    }
+                    device == central -> {
+                        centralConnected = false
+                        if (state == State.AWAIT_M1 && !cccdEnabled && sessionTimer != null) {
+                            // Dropped before any GATT use: not a transfer attempt; keep the session and its tag.
+                            Log.i(TAG, "central dropped before enabling TX addr=$a; advertising again")
+                            central = null; connEpoch++; connectMs = 0
+                            state = State.ADVERTISING
+                            startAdvertising()
+                        } else if (state != State.DONE) finish("central disconnected")
+                    }
+                    else -> Log.i(TAG, "stale disconnect ignored addr=$a")
                 }
             }
         }
 
         override fun onMtuChanged(device: BluetoothDevice, newMtu: Int) {
-            h.post { mtu = newMtu; mtuHistory.add(newMtu); Log.i(TAG, "mtu=$newMtu") }
+            h.post { if (stale("mtu", device)) return@post; mtu = newMtu; mtuHistory.add(newMtu); Log.i(TAG, "mtu=$newMtu") }
         }
 
         override fun onDescriptorReadRequest(device: BluetoothDevice, requestId: Int, offset: Int, d: BluetoothGattDescriptor) {
+            if (sid != sessionId) return
             val v = if (cccdEnabled) (if (useIndicate) BluetoothGattDescriptor.ENABLE_INDICATION_VALUE else BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) else BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
             gatt?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, v)
         }
 
         override fun onDescriptorWriteRequest(device: BluetoothDevice, requestId: Int, d: BluetoothGattDescriptor,
                                               preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
+            if (sid != sessionId) return
             val want = if (useIndicate) BluetoothGattDescriptor.ENABLE_INDICATION_VALUE else BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             val ok = d.uuid == CCCD && device == central && !preparedWrite && offset == 0 &&
                 (value.contentEquals(want) || value.contentEquals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE))
             if (responseNeeded) gatt?.sendResponse(device, requestId,
                 if (ok) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, 0, null)
             if (ok) h.post {
+                if (sid != sessionId) return@post
                 cccdEnabled = value.contentEquals(want)
                 if (cccdEnabled) {
                     cccdMs = SystemClock.elapsedRealtime()
@@ -282,16 +321,18 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
 
         override fun onCharacteristicWriteRequest(device: BluetoothDevice, requestId: Int, c: BluetoothGattCharacteristic,
                                                   preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
+            if (sid != sessionId) return
             // RX is Write-with-response. Drop everything until the central enabled TX and when it
             // is not the one accepted connection (spec section 2).
             val accept = c.uuid == RX && device == central && cccdEnabled && !preparedWrite && offset == 0
             if (responseNeeded) gatt?.sendResponse(device, requestId,
                 if (accept) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, 0, null)
-            if (accept) h.post { onRx(value) }
+            if (accept) h.post { if (sid == sessionId) onRx(value) }
         }
 
         override fun onNotificationSent(device: BluetoothDevice, status: Int) {
             h.post {
+                if (stale("notificationSent", device)) return@post
                 val dt = SystemClock.elapsedRealtimeNanos() - sentAtNs
                 sentCallbacks++
                 latencySumNs += dt
@@ -470,21 +511,30 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         plan = NoFaults // never stays armed across sessions
         // Callback-based teardown: drop the connection, wait for its disconnect callback (bounded),
         // then close the server; only then is a new session (new server, new tag) allowed to open.
-        val g = gatt; val dev = central
-        if (g != null && dev != null && centralConnected) {
-            g.cancelConnection(dev)
-            val t = Runnable { closeServer("no disconnect callback in 1500 ms") }
+        val g = gatt
+        closingWait.clear()
+        if (g != null) {
+            // Every device this server still sees as connected (not only the accepted central).
+            val devs = LinkedHashSet<BluetoothDevice>()
+            central?.takeIf { centralConnected }?.let { devs += it }
+            manager.getConnectedDevices(BluetoothProfile.GATT_SERVER).forEach { devs += it }
+            devs.forEach { closingWait += it.address; Log.i(TAG, "teardown: cancelConnection sid=$sessionId addr=${addr(it)}"); g.cancelConnection(it) }
+        }
+        if (closingWait.isEmpty()) closeServer("no connection")
+        else {
+            val t = Runnable { closeServer("no disconnect callback in 3000 ms (waiting: ${closingWait.size})") }
             closeTimer = t
-            h.postDelayed(t, 1500)
-        } else closeServer("no connection")
+            h.postDelayed(t, 3000)
+        }
     }
 
     private fun closeServer(why: String) {
         closeTimer?.let { h.removeCallbacks(it) }; closeTimer = null
+        closingWait.clear()
         gatt?.close(); gatt = null; central = null; centralConnected = false
         state = State.IDLE
         finishing = false
-        Log.i(TAG, "gatt server closed ($why)")
+        Log.i(TAG, "gatt server closed sid=$sessionId ($why)")
         pending?.let { p -> pending = null; start(p.code, p.notify, p.plan) }
     }
 }
