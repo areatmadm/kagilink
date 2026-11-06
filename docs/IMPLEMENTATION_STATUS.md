@@ -773,3 +773,13 @@ Not done: Swift/macOS spike not switched to the getter yet; no Android or Apple 
 docs/PHASE5_RDP_INPUT_FEASIBILITY.md section 7. Verified only by the PowerShell parser (0 errors, Windows PowerShell 5.1) and a
 compile of the embedded C# helper. NO runs were executed: mstsc was not started, no input was sent to any window, no
 password was handled. No RDP "supported" claim exists; D012 and D029 (proposed) are unchanged.
+
+### Phase 5 RDP harness: XAML credential prompt and `-Probe` (2026-11-07)
+
+Measured by read-only window enumeration on the owner's host (Windows 11): the mstsc credential prompt is a window of class
+`Credential Dialog Xaml Host` owned by `CredentialUIBroker`, not a `#32770` dialog of mstsc. `tools/rdp-input-harness.ps1` now
+detects that window (class + process name + UIA only, no localized text), keeps the `#32770` path as fallback, still requires
+foreground and a focused UIA password edit, closes the prompt before mstsc and never kills the broker. New read-only `-Probe`
+switch prints the detection result and a UIA property dump (no Edit names or values). Verified only by the PowerShell parser
+(0 errors); the embedded C# helper is unchanged. NO runs were executed: mstsc and the harness were not started, no input was
+sent. Open uncertainty: whether UIA exposes IsPassword and keyboard focus on the XAML password field; the `-Probe` run answers it.

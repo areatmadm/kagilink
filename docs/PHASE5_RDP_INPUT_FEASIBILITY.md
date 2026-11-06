@@ -125,12 +125,37 @@ elevated. Target must be an IPv4 literal in 192.168.77.0/24 that also exists on 
 secret, only the throwaway account's synthetic string, which the owner types into Read-Host (never echoed, logged, stored or
 passed on a command line; the agent never sees it). The harness exposes the string only to SendInput.
 
+Credential prompt on Windows 11 (measured on the owner's host, Korean UI, read-only window enumeration): the prompt that mstsc
+shows is NOT a `#32770` dialog of mstsc.exe. It is a top-level window of class `Credential Dialog Xaml Host` owned by process
+`CredentialUIBroker` (mstsc itself only owns its `#32770` connection window). It has a pre-filled user name, a password field,
+a "remember" checkbox and OK/Cancel buttons. The harness therefore identifies the prompt by class, process name and UI
+Automation properties only (no localized string is compared): primary the broker's XAML host window, fallback a `#32770` dialog
+of the started mstsc. It still requires the prompt to be the foreground window and UIA to show that the focused element is an
+Edit with IsPassword = true in the prompt's process; otherwise nothing is sent. The harness refuses to start if such a prompt is
+already open, closes the prompt (UIA Invoke on a button whose AutomationId contains "cancel", else WM_CLOSE) before closing
+mstsc, and force-kills only the mstsc it started, never CredentialUIBroker.
+
+Step 0, run first: `-Probe` (read-only, sends no input, asks for no string, writes no file):
+```
+pwsh -NoProfile -File tools\rdp-input-harness.ps1 -Probe
+```
+It starts mstsc to the allowed target, waits for the prompt, prints the window class, owner process and foreground state, then
+a compact UIA dump per descendant (ControlType, ClassName, AutomationId, IsPassword, HasKeyboardFocus, IsEnabled, IsOffscreen,
+and the name except for Edit controls; edit values are never read), then cancels the prompt and closes mstsc. How to read it:
+- `password edit (IsPassword=true) found : YES` and `has keyboard focus : True` means a real run can proceed past detection.
+- `found : NO` means UIA does not expose IsPassword on this XAML field (or the tree was not populated); real runs would fail
+  closed with no input. Then the detection needs a new design and a new owner decision; do not loosen it.
+- `has keyboard focus : False` means the password field was not focused when the prompt appeared (for example the user name
+  field has focus); real runs would fail closed with `PasswordEditNotFocused`.
+- `no Credential Dialog Xaml Host window ... appeared` means the prompt is hosted differently (certificate warning not
+  accepted, saved credentials, NLA settings); fix the preconditions below, do not edit the detection to match anything.
+
 Owner checklist before each series:
 - Host unlocked at the console, a normal (non-admin) PowerShell, no Jump Desktop or other remote session connected, no other
   mstsc.exe running, Caps Lock off, no modifier key held.
 - Do not touch keyboard or mouse during runs. Power, sleep and lock settings are the owner's to change; the tools change none.
-- In `mstsc` once beforehand: no saved credentials for the target, the certificate warning accepted/"don't ask again", and
-  the prompt must open with the throwaway user name filled in and the cursor in the password field (otherwise the run
+- In `mstsc` once beforehand: no saved credentials for the target (leave the "remember" checkbox off), the certificate warning
+  accepted/"don't ask again", and the prompt must open with the throwaway user name filled in and the cursor in the password field (otherwise the run
   fails closed with `PasswordEditNotFocused` and nothing is typed).
 - VM: run `tools\rdp-test-vm-evidence.ps1` once (prints the change, asks y/n); compare VM and host UTC clocks (both tools print
   them). Make sure the throwaway account is not locked out by the failed negative-control logons.
