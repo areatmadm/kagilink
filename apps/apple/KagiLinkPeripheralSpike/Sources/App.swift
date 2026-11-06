@@ -26,7 +26,21 @@ struct SpikeApp: App {
                 ScrollView { Text(spike.log.joined(separator: "\n")).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading) }
             }
             .padding(16)
-            .onChange(of: phase) { _, new in spike.noteScene("\(new)") }
+#if FAULT_INJECTION
+            // Test build only: keep the screen on while the app is in the foreground, and remember the
+            // selected fault mode (never the code) between launches to reduce taps.
+            .onAppear {
+                UIApplication.shared.isIdleTimerDisabled = true
+                if let raw = UserDefaults.standard.string(forKey: "faultMode"), let m = FaultMode(rawValue: raw) { spike.fault = m }
+            }
+            .onChange(of: spike.fault) { _, m in UserDefaults.standard.set(m.rawValue, forKey: "faultMode") }
+#endif
+            .onChange(of: phase) { _, new in
+#if FAULT_INJECTION
+                UIApplication.shared.isIdleTimerDisabled = (new == .active)
+#endif
+                spike.noteScene("\(new)")
+            }
         }
     }
 }
