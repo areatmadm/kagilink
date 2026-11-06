@@ -235,14 +235,30 @@ fn ble_receive(args: &[String]) -> ExitCode {
             println!("The code is no longer active (expired, used up or consumed).");
             return ExitCode::from(1);
         }
-        let raws = match areatm_kagilink_receiver::ble::scan_advertisements(seconds) {
+        let mut raws = match areatm_kagilink_receiver::ble::scan_advertisements(seconds) {
             Ok(r) => r,
             Err(e) => {
                 println!("Scan failed: {e:?}");
                 return ExitCode::from(1);
             }
         };
-        let list = build_list(&raws);
+        let mut list = build_list(&raws);
+        // A phone's tag can arrive in the scan response after the first packet. If some advertiser has no tag
+        // yet, keep listening a little longer (3 s, up to 3 times) and merge, instead of listing a row that
+        // cannot be chosen (field case: `Refused: NotSelectable(NoTag)`).
+        let mut extra = 0;
+        while extra < 3 && list.entries().iter().any(|c| c.tag.is_none()) {
+            println!("An advertiser has not shown its tag yet; listening 3 s more ...");
+            match areatm_kagilink_receiver::ble::scan_advertisements(3) {
+                Ok(more) => raws.extend(more),
+                Err(e) => {
+                    println!("Scan failed: {e:?}");
+                    return ExitCode::from(1);
+                }
+            }
+            list = build_list(&raws);
+            extra += 1;
+        }
         if list.entries().is_empty() {
             println!("No KagiLink senders found");
             return ExitCode::from(1);
