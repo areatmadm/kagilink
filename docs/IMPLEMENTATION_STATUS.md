@@ -783,3 +783,10 @@ foreground and a focused UIA password edit, closes the prompt before mstsc and n
 switch prints the detection result and a UIA property dump (no Edit names or values). Verified only by the PowerShell parser
 (0 errors); the embedded C# helper is unchanged. NO runs were executed: mstsc and the harness were not started, no input was
 sent. Open uncertainty: whether UIA exposes IsPassword and keyboard focus on the XAML password field; the `-Probe` run answers it.
+
+## Addendum 2026-11-07: Phase 5 first measurements (test VM)
+
+Isolated Hyper-V test VM built with `tools/New-RdpTestVm.ps1` and its isolation verified (see PHASE5 section 8). The harness `-Probe` showed
+that the Windows 11 RDP credential prompt (`CredentialUIBroker`, XAML host) exposes no UI Automation elements, so target verification is
+impossible and the harness fails closed. No input run was executed. RDP and CredUI input stays unsupported (D029 proposed, awaiting
+the owner's explicit adoption). Real-secret transfer stays disabled (D012).
