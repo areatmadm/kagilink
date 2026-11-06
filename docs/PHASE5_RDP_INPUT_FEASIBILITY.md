@@ -184,3 +184,19 @@ in section 3.2. NO "supported" claim is made from fewer runs; the harness's `Inp
 Expected risks to measure (not defects): the prompt may drop or reorder Unicode events; scan-code input depends on the
 keyboard layout; DPI/NLA/credential-provider behaviour may change focus or hosting (then the prompt is not recognised and the
 run fails closed); failed runs are recorded, never retried automatically. The report CSV is ignored by Git; do not commit it.
+
+## 8. First measurements on the test VM (2026-11-07)
+
+Isolated test VM (Windows Server 2022 Core, host-only switch, no gateway, no NAT, forwarding off): VM to host and host to VM:3389 verified
+(host-side TCP test succeeded; ARP showed the VM's MAC); VM to 1.1.1.1, 8.8.8.8 and DNS failed as required. Setup note: the VM clock
+was 7 h off; the Hyper-V time-sync provider (VMBus, no network) fixed it after `w32tm /resync`.
+
+Result of the read-only `-Probe` on the host (Windows 11): mstsc shows its credential prompt in a separate process,
+`CredentialUIBroker`, window class `Credential Dialog Xaml Host`, not in mstsc.exe. UI Automation returns **0 descendants** for it
+(default and raw view, waited about 4 s; no child windows), so the receiver cannot verify that the password field is the focus
+target. The harness therefore fails closed (`PasswordEditNotFound`) and sends nothing. No keystroke was sent to any window and no
+Positive or NegativeControl run was executed.
+
+Conclusion (owner chose to stop here): the prompt offers no way to verify the target, so input to it stays **unsupported**, which
+is what D029 proposes. The weaker option (foreground-class check only, outcome judged from server logs) was not run; if ever run it
+would be a measurement only and no basis for a "supported" claim. Real-secret transfer stays disabled (D012).
