@@ -116,3 +116,46 @@ agent session with no user click:
 
 See D029 (proposed) in docs/DECISIONS.md: keep RDP/CredUI/secure-desktop input unsupported; allow only an owned-control harness
 for evidence; promotion of any other target needs the section 3.2 evidence and a new owner decision.
+
+## 7. Running the study (test-only tooling)
+
+Tools (not part of the product receiver, not shipped): `tools/rdp-input-harness.ps1` (host) and `tools/rdp-test-vm-evidence.ps1`
+(inside the test VM). The harness works in Windows PowerShell 5.1 and pwsh 7, needs no administrator rights and refuses to run
+elevated. Target must be an IPv4 literal in 192.168.77.0/24 that also exists on a local interface. D012 is unchanged: no real
+secret, only the throwaway account's synthetic string, which the owner types into Read-Host (never echoed, logged, stored or
+passed on a command line; the agent never sees it). The harness exposes the string only to SendInput.
+
+Owner checklist before each series:
+- Host unlocked at the console, a normal (non-admin) PowerShell, no Jump Desktop or other remote session connected, no other
+  mstsc.exe running, Caps Lock off, no modifier key held.
+- Do not touch keyboard or mouse during runs. Power, sleep and lock settings are the owner's to change; the tools change none.
+- In `mstsc` once beforehand: no saved credentials for the target, the certificate warning accepted/"don't ask again", and
+  the prompt must open with the throwaway user name filled in and the cursor in the password field (otherwise the run
+  fails closed with `PasswordEditNotFocused` and nothing is typed).
+- VM: run `tools\rdp-test-vm-evidence.ps1` once (prints the change, asks y/n); compare VM and host UTC clocks (both tools print
+  them). Make sure the throwaway account is not locked out by the failed negative-control logons.
+
+Commands (host, one series per mode; calibration first with the default 5 runs):
+```
+pwsh -NoProfile -File tools\rdp-input-harness.ps1 -Mode Unicode                              # calibration, 5 runs, 1 negative
+pwsh -NoProfile -File tools\rdp-input-harness.ps1 -Mode Unicode  -Runs 50 -NegativeEvery 0   # 50 positive runs
+pwsh -NoProfile -File tools\rdp-input-harness.ps1 -Mode Unicode  -Runs 10 -NegativeOnly      # negative controls
+pwsh -NoProfile -File tools\rdp-input-harness.ps1 -Mode ScanCode -Runs 50 -NegativeEvery 0
+pwsh -NoProfile -File tools\rdp-input-harness.ps1 -Mode ScanCode -Runs 10 -NegativeOnly
+```
+Inside the VM (elevated PowerShell; copy the harness CSV there, it contains no characters of any string):
+```
+.\rdp-test-vm-evidence.ps1                                   # enable logon auditing (y/n)
+.\rdp-test-vm-evidence.ps1 -Report -Minutes 120 -RunsFile .\rdp-input-harness-report-<UTC>.csv
+```
+Comparison rule (implemented in `-Report`): each Positive run matches exactly one counted 4624 (default logon type 10) within 30 s
+of its UTC time and no 4625; each NegativeControl exactly one 4625 and no counted 4624; runs that sent nothing, no event; no
+event from the host outside run windows. Any mismatch is FAIL. Type 3 (NLA) 4624 events are listed as ignored, not hidden; the
+calibration run must confirm which pattern the VM produces before the counted types are trusted.
+
+Requirement: at least 50 consecutive Positive runs per mode with a matching 4624 each time, plus clean negative controls, as
+in section 3.2. NO "supported" claim is made from fewer runs; the harness's `InputAttempted` is SendInput's accepted count only.
+
+Expected risks to measure (not defects): the prompt may drop or reorder Unicode events; scan-code input depends on the
+keyboard layout; DPI/NLA/credential-provider behaviour may change focus or hosting (then the prompt is not recognised and the
+run fails closed); failed runs are recorded, never retried automatically. The report CSV is ignored by Git; do not commit it.

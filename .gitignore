@@ -13,3 +13,5 @@ apps/android/local.properties
 /core/kagilink-core/fuzz/target/
 /core/kagilink-core/fuzz/artifacts/
 /core/kagilink-core/fuzz/corpus/
+/rdp-input-harness-report-*.csv
+**/rdp-input-harness-report-*.csv
