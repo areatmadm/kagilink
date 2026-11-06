@@ -89,13 +89,14 @@ object FaultFactory {
 
         override fun onSessionStart(tag: String, gatt: String, utc: String) {
             if (viaHook) Log.i(TAG, "TEST started tag=KL-$tag fault=${k.name} gatt=$gatt utc=$utc")
+            if (viaHook) Log.i(TAG, "TEST auto-approve=yes")
         }
 
         override fun onSessionEnd(outcome: String, utc: String) {
             if (viaHook) Log.i(TAG, "TEST ended fault=${k.name} outcome=$outcome utc=$utc")
         }
 
-        override fun autoApprove() = viaHook && k == Kind.TAMPER_SECRET // test automation, synthetic data
+        override fun autoApprove() = viaHook // test automation only: sessions started by TEST_START; manual Start still needs Approve
 
         override fun secretFragment(index: Int, frag: ByteArray): ByteArray {
             if (k != Kind.TAMPER_SECRET || index != 0) return frag
