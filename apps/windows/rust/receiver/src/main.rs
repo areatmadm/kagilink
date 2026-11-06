@@ -319,6 +319,11 @@ fn ble_receive(args: &[String]) -> ExitCode {
             return report_attempt(result);
         }
         report_attempt(result);
+        // Budget spent (3/3) or expired: the code is already destroyed, so do not offer a retry.
+        if !rx.is_active() {
+            println!("The code is no longer active (expired, used up or consumed).");
+            return ExitCode::from(1);
+        }
         print!("Retry with the same code? Type y to scan again (anything else ends): ");
         let _ = io::stdout().flush();
         let mut line = String::new();
