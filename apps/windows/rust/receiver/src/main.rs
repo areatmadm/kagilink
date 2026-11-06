@@ -254,17 +254,18 @@ fn ble_receive(args: &[String]) -> ExitCode {
                 _ => println!("[{}] (no usable tag)  cannot choose", i + 1),
             }
         }
-        let choice = match flag_value(args, "--choose") {
-            Some(v) => v.parse::<usize>().ok(),
+        // The user (or a test harness acting for the user) types a row number or the tag shown on the phone.
+        let typed = match flag_value(args, "--choose") {
+            Some(v) => v,
             None => {
-                print!("Pick the row whose tag matches your phone: ");
+                print!("Pick the row whose tag matches your phone (number or tag): ");
                 let _ = io::stdout().flush();
                 let mut line = String::new();
                 let _ = io::stdin().lock().read_line(&mut line);
-                line.trim().parse::<usize>().ok()
+                line
             }
         };
-        let Some(index) = choice.and_then(|n| n.checked_sub(1)) else {
+        let Some(index) = list.index_for_choice(&typed) else {
             println!("No valid row chosen. Nothing was connected.");
             return ExitCode::from(2);
         };
