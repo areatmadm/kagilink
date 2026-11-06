@@ -117,3 +117,17 @@ a broadcast receiver cannot launch an Activity from the background; without an o
 TEST_START is refused (`app screen is not open`). Measured on a Galaxy S24 (screen off, keyguard
 showing): `am start` woke the screen, the app was the resumed, focused window with the keyguard still
 showing, and the following TEST_START started a session.
+
+### Session restart order (same code, repeated TEST_START)
+
+Each session logs, in this order and with times relative to the session start:
+`gatt server opened t=+Nms` -> `gatt server ready (service added) t=+Nms` -> `adv started t=+Nms`
+(all with `tag=KL-XXXX`). Advertising has always started only after `onServiceAdded`. A session now
+ends in a callback-based teardown: stop advertising, `cancelConnection` and wait for the disconnect
+callback (at most 1.5 s), close the GATT server, log `gatt server closed (...)`, and only then may the
+next session open its server; a TEST_START that arrives during that teardown is queued
+(`start queued until the previous GATT server is closed`). Measured on a Galaxy S24 without a receiver:
+three consecutive TEST_START with the same code gave the same order each time (opened +5..7 ms,
+ready +10..15 ms, adv +29..38 ms). A receiver-side failure that survives this ordering (for example
+`Gatt(Unreachable)` on a reused address) points at the central's GATT cache; this was not reproduced
+or excluded here.

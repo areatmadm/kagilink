@@ -62,7 +62,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         val CLAIMS = "mode=spike".toByteArray()
     }
 
-    private enum class State { IDLE, ADVERTISING, AWAIT_M1, AWAIT_M3, CHANNEL, DONE }
+    private enum class State { IDLE, ADVERTISING, AWAIT_M1, AWAIT_M3, CHANNEL, DONE, CLOSING }
 
     private val thread = HandlerThread("kl-v1").also { it.start() }
     private val h = Handler(thread.looper)
@@ -85,6 +85,11 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
     private var reassembler = Framing.Reassembler()
     private var sessionTimer: Runnable? = null
     private var finishing = false
+    private var closeTimer: Runnable? = null
+    private var centralConnected = false
+    private class PendingStart(val code: ByteArray, val notify: Boolean, val plan: FaultPlan)
+    private var pending: PendingStart? = null
+    private var sessionStartMs = 0L
     private var messageTimer: Runnable? = null
     private val queue = ArrayDeque<ByteArray>()
     private var inFlight = false
@@ -108,6 +113,13 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
 
     /** [codeDigits] is wiped by this class once used or on cleanup. */
     fun start(codeDigits: ByteArray, notifyMode: Boolean, requested: FaultPlan = NoFaults) = h.post {
+        if (state == State.CLOSING) {
+            // The previous session is still tearing down its GATT server: start right after it closed.
+            pending?.let { Native.secureWipe(it.code) }
+            pending = PendingStart(codeDigits, notifyMode, requested)
+            Log.i(TAG, "start queued until the previous GATT server is closed")
+            return@post
+        }
         if (state != State.IDLE) { Native.secureWipe(codeDigits); ui.onStatus("already running"); return@post }
         code = codeDigits
         useIndicate = !notifyMode
@@ -129,9 +141,11 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         Log.i(TAG, "session start utc=$utc tag=KL-$advTag mode=${if (useIndicate) "indicate" else "notify"} fault=${plan.name}")
         ui.onStatus("session start $utc UTC, tag KL-$advTag")
         plan.onSessionStart(advTag, if (useIndicate) "indicate" else "notify", utc.toString())
+        sessionStartMs = SystemClock.elapsedRealtime()
         val server = manager.openGattServer(ctx, serverCallback)
         if (server == null) { finish("openGattServer failed"); return@post }
         gatt = server
+        Log.i(TAG, "gatt server opened t=+${SystemClock.elapsedRealtime() - sessionStartMs}ms tag=KL-$advTag")
         val svc = BluetoothGattService(SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
         svc.addCharacteristic(BluetoothGattCharacteristic(
             RX, BluetoothGattCharacteristic.PROPERTY_WRITE, BluetoothGattCharacteristic.PERMISSION_WRITE))
@@ -183,7 +197,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
                 h.post {
                     advStartMs = SystemClock.elapsedRealtime()
                     ui.onStatus("advertising tag $advTag (service UUID + service data), 60 s")
-                    Log.i(TAG, "adv started tag-len=4 mode=${if (useIndicate) "indicate" else "notify"}")
+                    Log.i(TAG, "adv started t=+${advStartMs - sessionStartMs}ms tag=KL-$advTag tag-len=4 mode=${if (useIndicate) "indicate" else "notify"}")
                 }
             }
             override fun onStartFailure(errorCode: Int) { h.post { finish("advertise failed $errorCode") } }
@@ -208,7 +222,11 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
     private val serverCallback = object : BluetoothGattServerCallback() {
         override fun onServiceAdded(status: Int, service: BluetoothGattService) {
             h.post {
-                if (status == BluetoothGatt.GATT_SUCCESS) startAdvertising() else finish("service add failed $status")
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    // Advertising starts only after the service is registered (spec: never before ready).
+                    Log.i(TAG, "gatt server ready (service added) t=+${SystemClock.elapsedRealtime() - sessionStartMs}ms tag=KL-$advTag")
+                    startAdvertising()
+                } else finish("service add failed $status")
             }
         }
 
@@ -217,6 +235,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
                 if (newState == BluetoothGatt.STATE_CONNECTED) {
                     if (central == null && state == State.ADVERTISING) {
                         central = device
+                        centralConnected = true
                         connectMs = SystemClock.elapsedRealtime()
                         state = State.AWAIT_M1
                         stopAdvertising()
@@ -226,7 +245,11 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
                     } else {
                         gatt?.cancelConnection(device) // at most one connection
                     }
+                } else if (newState == BluetoothGatt.STATE_DISCONNECTED && state == State.CLOSING) {
+                    if (device == central) {
+                        centralConnected = false; closeTimer?.let { h.removeCallbacks(it) }; closeTimer = null; closeServer("central disconnected") }
                 } else if (newState == BluetoothGatt.STATE_DISCONNECTED && device == central) {
+                    centralConnected = false
                     if (state != State.DONE) finish("central disconnected")
                 }
             }
@@ -427,8 +450,6 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         sender?.close(); sender = null
         reassembler.close()
         queue.clear()
-        central?.let { gatt?.cancelConnection(it) }
-        gatt?.close(); gatt = null; central = null
         val avgMs = if (sentCallbacks > 0) latencySumNs / sentCallbacks / 1e6 else 0.0
         val summary = "${if (ok) "OK" else "ended"}: $reason | fault=${plan.name} mode=${if (useIndicate) "indicate" else "notify+ack"} " +
             "mtu=$mtu(history=$mtuHistory) chunk=${chunkSize()} chunksSent=$chunksSent sentCallbacks=$sentCallbacks " +
@@ -439,7 +460,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         plan.onSessionEnd(outcomeWord(reason, ok),
             java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
         ui.onFinished(summary)
-        state = State.IDLE
+        state = State.CLOSING // not IDLE until the GATT server is really closed
         reassembler = Framing.Reassembler()
         // Allow a fresh session (fresh tag, keys, code) after cleanup; nothing resumes.
         cccdEnabled = false; mtu = 23; inFlight = false; awaitingAck = -1
@@ -447,6 +468,23 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         latencySumNs = 0; latencyMaxNs = 0; chunksSent = 0; acksReceived = 0
         advStartMs = 0; connectMs = 0; cccdMs = 0
         plan = NoFaults // never stays armed across sessions
+        // Callback-based teardown: drop the connection, wait for its disconnect callback (bounded),
+        // then close the server; only then is a new session (new server, new tag) allowed to open.
+        val g = gatt; val dev = central
+        if (g != null && dev != null && centralConnected) {
+            g.cancelConnection(dev)
+            val t = Runnable { closeServer("no disconnect callback in 1500 ms") }
+            closeTimer = t
+            h.postDelayed(t, 1500)
+        } else closeServer("no connection")
+    }
+
+    private fun closeServer(why: String) {
+        closeTimer?.let { h.removeCallbacks(it) }; closeTimer = null
+        gatt?.close(); gatt = null; central = null; centralConnected = false
+        state = State.IDLE
         finishing = false
+        Log.i(TAG, "gatt server closed ($why)")
+        pending?.let { p -> pending = null; start(p.code, p.notify, p.plan) }
     }
 }
