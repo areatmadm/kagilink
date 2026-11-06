@@ -700,3 +700,25 @@ Defect found by the Android session and fixed here: when the code expired while 
 fell from 2/3 to 1/3. Cause: `kill()` dropped the open attempt without counting it. Fix: `kill()` counts an attempt that is open after M3 (D026); two
 core regression tests. A dropped link after M3 surfaced as `Timeout` (about 10 s wait) rather than `Link(Disconnected)` on Windows for Android;
 not investigated further.
+
+### Real-radio fault injection series, 2026-11-06 (Galaxy S24 and iPhone 15 Pro to a Windows receiver)
+
+All results below are as REPORTED by the platform sessions and the test-station session from owner-run or session-driven runs; the lead session did not run the radio tests itself. Data is synthetic. Pairing of PC output and phone logs is by time (UTC, about 1-2 s clock skew).
+
+**Android (debug APK v12, automated by `tools/ble-fault-harness.ps1` over adb on the test-station PC; signal "Weak" in every run):**
+15 of 15 scenarios PASS in the final full run: none (Indicate and Notify) Transfer OK; garbage M2 `Core(WrongState)` 0/3; tampered M4 `Core(ConfirmationFailed)` 1/3 (both modes); drop after M3 `Link(Disconnected)` 1/3; duplicate, skipped and reordered chunk `Core(Framing)` 0/3; no answer to M1 `Timeout` 0/3; M2 delayed 6 s Transfer OK (by design, the receiver waits up to 10 s for a first chunk); M2 delayed 11 s `Timeout` 0/3; tampered SECRET `Core(Authentication)` 0/3 (handshake already succeeded, code consumed, budget not used); same code with tampered M4 three times: 1/3, 2/3, 3/3 and "The code is no longer active". Phone-side outcomes agree.
+
+**iPhone (fault build, manual with session-driven PC input):**
+tampered M4 twice with the same code `Core(ConfirmationFailed)` 1/3 then 2/3 (third attempt not completed: operator latency within the 60 s code lifetime, so 3/3 and code destruction are NOT yet observed on iPhone); M2 delayed 11 s `Timeout` 0/3; drop after M3 `Link(Disconnected)` 1/3; skipped chunk `Core(Framing)` 0/3; tampered SECRET `Core(Authentication)` 0/3. Phone logs (macOS session) agree: the failure budget counted exactly the attempts where the phone had received M3 (D026).
+
+**Defects and wrong expectations found by these runs (all fixed on main unless noted):**
+1. Receiver pick prompt failed under a harness: Windows PowerShell 5.1 prefixed stdin with a UTF-8 BOM, which Rust `trim()` keeps. Fixed (`clean_input`, PR #42).
+2. A list row without a tag (scan response arriving after the first packet) was shown and refused. The receiver now listens up to 3 x 3 s more (PR #38).
+3. GATT discovery failures were reported as `NotKagiLink`; now the real status (`Gatt(Unreachable)`) with 3 discovery retries (PR #44), one full connect retry (#49), and the GATT service and link are released earlier (#50, effect not proven alone).
+4. Displayed failure budget fell from 2/3 to 1/3 on expiry with an after-M3 attempt open (core `kill()`, PR #26).
+5. repeat-b3 second attempt failed with `Gatt(Unreachable)`: the Android app's cleanup (server closed 1.5 s after cancel with the old link still up) was the cause side; fixed on the phone by closing every connection and waiting for disconnect callbacks up to 3 s before closing the server (PR #48, #51). The "stale disconnect ignored" guards added in #51 were NOT exercised in the passing run, so the mechanism that killed the new session is plausible but not proven. The Windows-side release changes (#49, #50) did not fix it alone.
+6. My test expectations were wrong twice (6 s M2 delay, budget after tampered SECRET); the spec and the harness now say the right thing.
+
+**Not covered:** iPhone same-code 3/3 and code destruction; background advertising; MTU 23; two advertisers (two phones advertised at the same time only by accident); Notify on iOS (iOS uses Indicate); radio range (all runs Weak signal at the test station); other Windows adapters; Android background-session behaviour (the app fails closed when not in the foreground).
+
+**Process notes:** the test-station PC runs the same receiver from a clean clone (docs/WINDOWS_TEST_STATION.md); the owner-seat variant allows the owner's sign-in there. Test hooks (adb `TEST_START`, auto-approve, fault modes) exist only in the Android debug source set and the iPhone `FAULT_INJECTION=1` build; Android's release check runs locally, not in CI (the module is not built by CI).
