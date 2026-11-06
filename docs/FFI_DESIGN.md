@@ -134,9 +134,10 @@ free was use-after-free (the old `try_lock` only guarded concurrent non-free cal
   functions plus opaque handles and byte buffers.
 - History: v1 = handshake and secure channel (18 exports); v2 (D027, 2026-11-06) adds
   the BLE chunk codec. Adding functions also bumps the version so a v1 host refuses a v2 library
-  and the reverse. Places that record the number: `KL_ABI_VERSION` in `lib.rs` and `kagilink.h`,
-  `EXPECTED_ABI` in `apps/android/ffi-spike/src/Native.kt`, the `abi_version_is_two` test; the
-  C, C++ and Swift consumers compare against the header constant.
+  and the reverse. v3 (D030, 2026-11-06) adds the read-only `kl_receiver_failures` (below), again
+  bumping the version by the same rule. Places that record the number: `KL_ABI_VERSION` in `lib.rs`
+  and `kagilink.h`, `EXPECTED_ABI` in `apps/android/ffi-spike/binding/Native.kt`, the
+  `abi_version_is_three` test; the C, C++ and Swift consumers compare against the header constant.
 
 ## BLE chunk codec (ABI v2, D027)
 
@@ -162,6 +163,23 @@ connection". Error mapping is the core one: Malformed (reserved/ACK bits, short 
 Framing (duplicate, gap, reorder, bad first chunk, LAST/length mismatch), Limits (declared length 0 or
 above 512), Unsupported (unknown message type), Closed (after an error). Test evidence is listed in
 IMPLEMENTATION_STATUS.md; real BLE use of this API is not tested.
+
+## Receiver failure budget getter (ABI v3, D030)
+
+`kl_receiver_failures(r, out_used, out_max)` returns the receiver's use of the three-failure budget so
+hosts display the core's number instead of deriving it (the macOS spike did and could drift).
+
+- `*out_used` = core `ReceiverSession::failures_including_open()`: attempts that already sent M3 and
+  have not succeeded, counting an open one (D026); the same definition as the Windows receiver.
+  `*out_max` = `MAX_FAILURES` (3).
+- Read-only: it changes no session state and exposes no code or key material. It keeps working after
+  expiry, success and budget exhaustion and then returns the final count with `KL_OK`.
+- Errors: `KL_ERR_NULL` for a NULL, stale, forged, freed or wrong-type handle (registry lookup, as for
+  every getter) and for NULL out pointers (outputs untouched); `KL_ERR_BUSY` if another call holds the
+  handle. Panics are caught (`KL_ERR_PANIC`); nothing unwinds across the boundary.
+- Tests: `receiver_failures_*` in `core/kagilink-ffi/tests/ffi.rs` (0/3, open attempt after M3,
+  3/3 after the budget is spent, after success, NULL/stale/wrong-type/garbage handles, NULL out
+  pointers) and a unit test with a manual clock for the expired case. C++ wrapper: `Receiver::failures`.
 
 ## Per-platform binding sketch
 

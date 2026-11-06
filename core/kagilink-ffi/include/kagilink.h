@@ -1,5 +1,5 @@
 /*
- * KagiLink C ABI (hand-written to match core/kagilink-ffi exactly; ABI version 2).
+ * KagiLink C ABI (hand-written to match core/kagilink-ffi exactly; ABI version 3).
  * Apache-2.0. Synthetic-data use only until independent review (D012/D014/D016).
  *
  * Conventions
@@ -43,7 +43,7 @@
 extern "C" {
 #endif
 
-#define KL_ABI_VERSION 2u
+#define KL_ABI_VERSION 3u
 
 /* Stable numeric values. 1..17 map one-to-one from the core Error enum. */
 typedef enum kl_status_t {
@@ -122,6 +122,12 @@ kl_status_t kl_receiver_handle_m2(kl_receiver_t* r, const uint8_t* m2, size_t m2
  * KL_ERR_NULL and KL_ERR_BUSY cost nothing. At three failures the code is destroyed. */
 kl_status_t kl_receiver_finish(kl_receiver_t* r, const uint8_t* m4, size_t m4_len,
                                kl_channel_t** out_channel);
+
+/* Read-only failure budget (D030): *out_used = failed attempts so far plus one if an attempt that
+ * already sent M3 is still open (D026); *out_max = 3. No state change, no secrets. Also works after
+ * expiry, success or exhaustion (final count). KL_ERR_NULL for a NULL/stale/freed handle or NULL
+ * out pointer (outputs untouched). */
+kl_status_t kl_receiver_failures(kl_receiver_t* r, uint8_t* out_used, uint8_t* out_max);
 
 void kl_receiver_free(kl_receiver_t* r);
 

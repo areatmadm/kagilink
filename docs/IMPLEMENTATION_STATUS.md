@@ -757,3 +757,12 @@ phone tag was typed by a harness acting for the user; the code was shown in the 
 Limits: the budget shown is derived by the Swift driver (the C ABI has no counter query); only these scenarios were run on the Mac receiver, the other fault
 modes were not; the Mac was not tested at ATT MTU 23, with two advertisers or in the background. A Bluetooth permission prompt had to be accepted by the user once.
 macOS app-bundle runs (not signed with a team certificate) say nothing about Developer ID, notarization or Secure Enclave. Nothing here proves device integrity.
+
+### `kl_receiver_failures` read-only failure getter, ABI v3 (D030, 2026-11-06)
+
+| Item | Status |
+|---|---|
+| `kl_receiver_failures` in `core/kagilink-ffi`, `kagilink.h`, `kagilink.hpp` (`Receiver::failures`), `KL_ABI_VERSION` 3, Android spike `EXPECTED_ABI` 3 | implemented |
+| FFI tests: 0/3 initially, open attempt counted only after M3, 3/3 after budget spent, after success, NULL out pointers, NULL/stale/wrong-type/forged handles; unit test for expiry with a manual clock | passed locally (synthetic data) |
+
+Not done: Swift/macOS spike not switched to the getter yet; no Android or Apple rebuild was run for this change.
