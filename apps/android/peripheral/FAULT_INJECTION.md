@@ -131,3 +131,19 @@ three consecutive TEST_START with the same code gave the same order each time (o
 ready +10..15 ms, adv +29..38 ms). A receiver-side failure that survives this ordering (for example
 `Gatt(Unreachable)` on a reused address) points at the central's GATT cache; this was not reproduced
 or excluded here.
+
+### Stale connections between sessions
+
+Hypothesis from a harness run (not reproduced on the phone alone): the receiver's previous connection
+can outlive the previous session, then show up (and later disconnect) while the next session is
+advertising; treating that as the new session's central ended the session and its advertising. Now:
+the GATT server callback is per session (`sid`), callbacks of an older server are logged as
+`stale callback ignored` and change nothing; a link reported before this session's advertising ran is
+refused (`stale connection before advertising ignored`); a disconnect of a device that is not this
+session's accepted central is only logged (`stale disconnect ignored`); if the accepted central drops
+before enabling TX, the session keeps its tag and advertises again (`central dropped before enabling
+TX ...; advertising again`) instead of ending; session teardown cancels every device the server still
+sees as connected and waits up to 3 s for the disconnect callbacks before closing the server. Log lines
+carry `sid` and `addr=<first 4 hex of SHA-256 of the central address>` (the address is not a secret;
+this is never the code). Verified on a Galaxy S24 only for ordinary restarts without a receiver
+(3 consecutive TEST_START: same order, sids 1..3); the stale-link path itself needs the receiver.
