@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleDisplayName</key><string>KL-V1 Receiver Spike</string>
+    <key>CFBundleIdentifier</key><string>in.minori.key.spike.macrx</string>
+    <key>CFBundleExecutable</key><string>KLV1ReceiverSpike</string>
+    <key>CFBundleName</key><string>KLV1ReceiverSpike</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.0.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>Exchanges synthetic test data only with a nearby test sender over BLE. No passwords are transferred.</string>
+</dict></plist>
