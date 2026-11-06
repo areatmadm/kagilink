@@ -8,7 +8,13 @@ run the receiver-side BLE tests when the home PC is not available. It changes no
 * The station is a **test station only**. The lead stays the home Windows session (D015). The station does not merge
   PRs, change decisions, or edit shared policy files; it builds, runs tests and reports exact outputs to the lead.
 * Synthetic data only. No real password, token or key is ever typed or sent (D012 keeps real-secret transfer off).
-* The computer is **shared and untrusted**: it may have keyloggers or other users. Therefore:
+* Owner-seat variant (owner decision, 2026-11-06): if the owner states that the machine is a seat only they use and that
+  they must stay signed in there for other work, the station MAY use the owner's GitHub sign-in and the private memory
+  gate (`tools/Test-AiMemoryAccess.ps1` must still exit 0). The rules below that are not about sign-in still apply:
+  never print or store tokens in files, no real secrets, no pushes to `main` (PRs only, and only when the lead asks),
+  conversation records stay out of public files and logs, and the owner signs out or the lead is told if the seat stops
+  being exclusive. Otherwise treat the computer as shared and untrusted:
+* The default assumption is a **shared and untrusted** computer: it may have keyloggers or other users. Therefore:
   * Do NOT sign in to the owner's GitHub account, and do not store any token or password on it. Clone the public
     repository over HTTPS read-only. The station cannot push; results go to the lead as text.
   * Do NOT clone or read the private memory repository (`shared/ai/`). The AGENTS.md memory gate needs the owner's
