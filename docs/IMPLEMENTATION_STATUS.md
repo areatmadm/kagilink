@@ -766,3 +766,10 @@ macOS app-bundle runs (not signed with a team certificate) say nothing about Dev
 | FFI tests: 0/3 initially, open attempt counted only after M3, 3/3 after budget spent, after success, NULL out pointers, NULL/stale/wrong-type/forged handles; unit test for expiry with a manual clock | passed locally (synthetic data) |
 
 Not done: Swift/macOS spike not switched to the getter yet; no Android or Apple rebuild was run for this change.
+
+### Phase 5 RDP input study tooling (2026-11-07)
+
+`tools/rdp-input-harness.ps1` (host) and `tools/rdp-test-vm-evidence.ps1` (in the test VM) exist and are described in
+docs/PHASE5_RDP_INPUT_FEASIBILITY.md section 7. Verified only by the PowerShell parser (0 errors, Windows PowerShell 5.1) and a
+compile of the embedded C# helper. NO runs were executed: mstsc was not started, no input was sent to any window, no
+password was handled. No RDP "supported" claim exists; D012 and D029 (proposed) are unchanged.
