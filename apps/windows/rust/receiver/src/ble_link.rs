@@ -27,8 +27,10 @@ use windows::Storage::Streams::DataWriter;
 pub enum ConnectError {
     /// A WinRT step failed or returned a bad status; the text names the step only.
     Step(&'static str),
-    /// The peer does not offer the KL-V1 service or one of its characteristics.
+    /// The peer does not offer the KL-V1 service or one of its characteristics (discovery worked, the service is absent).
     NotKagiLink,
+    /// Windows could not complete GATT discovery; the text is the WinRT status (Unreachable, ProtocolError, AccessDenied).
+    Gatt(&'static str),
     /// TX offers neither Indicate nor Notify.
     NoSubscribeMode,
 }
@@ -47,6 +49,18 @@ pub struct WinGattLink {
     closed: bool,
 }
 
+fn status_name(s: GattCommunicationStatus) -> &'static str {
+    if s == GattCommunicationStatus::Unreachable {
+        "Unreachable"
+    } else if s == GattCommunicationStatus::ProtocolError {
+        "ProtocolError"
+    } else if s == GattCommunicationStatus::AccessDenied {
+        "AccessDenied"
+    } else {
+        "OtherStatus"
+    }
+}
+
 fn step<T>(r: windows::core::Result<T>, name: &'static str) -> Result<T, ConnectError> {
     r.map_err(|_| ConnectError::Step(name))
 }
@@ -61,8 +75,9 @@ fn find_characteristic(
             .and_then(|o| o.join()),
         "characteristic discovery",
     )?;
-    if step(r.Status(), "characteristic status")? != GattCommunicationStatus::Success {
-        return Err(ConnectError::NotKagiLink);
+    let status = step(r.Status(), "characteristic status")?;
+    if status != GattCommunicationStatus::Success {
+        return Err(ConnectError::Gatt(status_name(status)));
     }
     step(r.Characteristics(), "characteristics")?
         .into_iter()
@@ -88,15 +103,31 @@ pub fn connect(address: u64) -> Result<WinGattLink, ConnectError> {
     let pdu = session.MaxPduSize().unwrap_or(23) as usize;
     let chunk = pdu.saturating_sub(3).clamp(20, 244);
 
-    let services = step(
-        device
-            .GetGattServicesForUuidWithCacheModeAsync(KL_V1_SERVICE, BluetoothCacheMode::Uncached)
-            .and_then(|o| o.join()),
-        "service discovery",
-    )?;
-    if step(services.Status(), "service status")? != GattCommunicationStatus::Success {
-        return Err(ConnectError::NotKagiLink);
+    // The link may not be up yet right after FromBluetoothAddressAsync (weak signal, slow adapter): a first
+    // discovery can come back Unreachable. Retry up to 3 times, 1.5 s apart, and report the real status.
+    let mut last_status = "none";
+    let mut found = None;
+    for attempt in 0..3 {
+        let services = step(
+            device
+                .GetGattServicesForUuidWithCacheModeAsync(
+                    KL_V1_SERVICE,
+                    BluetoothCacheMode::Uncached,
+                )
+                .and_then(|o| o.join()),
+            "service discovery",
+        )?;
+        let status = step(services.Status(), "service status")?;
+        if status == GattCommunicationStatus::Success {
+            found = Some(services);
+            break;
+        }
+        last_status = status_name(status);
+        if attempt < 2 {
+            std::thread::sleep(Duration::from_millis(1500));
+        }
     }
+    let services = found.ok_or(ConnectError::Gatt(last_status))?;
     let service = step(services.Services(), "services")?
         .into_iter()
         .next()
