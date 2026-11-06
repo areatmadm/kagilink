@@ -722,3 +722,11 @@ tampered M4 twice with the same code `Core(ConfirmationFailed)` 1/3 then 2/3 (th
 **Not covered:** iPhone same-code 3/3 and code destruction; background advertising; MTU 23; two advertisers (two phones advertised at the same time only by accident); Notify on iOS (iOS uses Indicate); radio range (all runs Weak signal at the test station); other Windows adapters; Android background-session behaviour (the app fails closed when not in the foreground).
 
 **Process notes:** the test-station PC runs the same receiver from a clean clone (docs/WINDOWS_TEST_STATION.md); the owner-seat variant allows the owner's sign-in there. Test hooks (adb `TEST_START`, auto-approve, fault modes) exist only in the Android debug source set and the iPhone `FAULT_INJECTION=1` build; Android's release check runs locally, not in CI (the module is not built by CI).
+
+## Addendum 2026-11-06: iPhone same-code test 1 re-run (academy station)
+
+Real radio, iPhone 15 Pro with the tamperM4 test build, synthetic code. The same code was tried three times: the receiver showed
+`Failure budget used` 1/3, 2/3, 3/3 with `Core(ConfirmationFailed)` each time, all within 48 s of code creation. A first run in
+tamperSecret mode correctly used 0/3 (D026). Defect found: after 3/3 the receiver still asked "Retry with the same code?" although
+the code was already destroyed (Android printed "The code is no longer active"). Fixed: the receiver now prints that line and ends
+without the retry prompt when the code is inactive. Not yet re-observed on the iPhone after the fix.
