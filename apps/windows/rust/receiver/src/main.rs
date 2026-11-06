@@ -282,7 +282,11 @@ fn ble_receive(args: &[String]) -> ExitCode {
             }
         };
         let Some(index) = list.index_for_choice(&typed) else {
-            println!("No valid row chosen. Nothing was connected.");
+            println!(
+                "No valid row chosen. Nothing was connected. (typed {} characters, {} rows listed)",
+                typed.trim().chars().count(),
+                list.entries().len()
+            );
             return ExitCode::from(2);
         };
         let target = match list.choose_target(index) {
