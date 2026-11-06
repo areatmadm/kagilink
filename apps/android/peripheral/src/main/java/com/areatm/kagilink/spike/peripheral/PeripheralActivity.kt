@@ -42,6 +42,8 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener, TestHookHost 
         check(Native.abiVersion() == Native.EXPECTED_ABI) { "ABI mismatch" }
         session = PeripheralSession(applicationContext, this)
         TestHookRegistry.host = this
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // only while this screen is in front
+        TestWake.apply(this)
         val pad = (16 * resources.displayMetrics.density).toInt()
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad * 2, pad, pad) }
         col.addView(TextView(this).apply { text = "KagiLink KL-V1 peripheral spike\n(synthetic data only, not a product)"; textSize = 16f })
