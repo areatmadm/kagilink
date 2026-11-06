@@ -27,6 +27,7 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
     private lateinit var notifyBox: CheckBox
     private var faultSpinner: Spinner? = null
     private var keepFault: CheckBox? = null
+    private var modeView: TextView? = null
     private lateinit var tagView: TextView
     private lateinit var statusView: TextView
     private lateinit var startBtn: Button
@@ -43,24 +44,43 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
         val pad = (16 * resources.displayMetrics.density).toInt()
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad * 2, pad, pad) }
         col.addView(TextView(this).apply { text = "KagiLink KL-V1 peripheral spike\n(synthetic data only, not a product)"; textSize = 16f })
+        val prefs = getSharedPreferences("kl_test_settings", MODE_PRIVATE) // test settings only, never the code
         codeField = EditText(this).apply {
             hint = "6-digit test code from the receiver"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
             filters = arrayOf(android.text.InputFilter.LengthFilter(6))
         }
-        col.addView(codeField)
-        notifyBox = CheckBox(this).apply { text = "Notify + app ACK mode (default: Indicate)" }
-        col.addView(notifyBox)
+        notifyBox = CheckBox(this).apply {
+            text = "Notify + app ACK mode (default: Indicate)"
+            isChecked = prefs.getBoolean("notify", false)
+            setOnCheckedChangeListener { _, v -> prefs.edit().putBoolean("notify", v).apply(); showMode() }
+        }
         if (FaultFactory.labels.isNotEmpty()) { // only debug builds have fault injection
+            modeView = TextView(this).apply { textSize = 22f; setTypeface(typeface, android.graphics.Typeface.BOLD) }
+            col.addView(modeView)
             col.addView(TextView(this).apply { text = FaultFactory.heading })
             faultSpinner = Spinner(this).apply {
                 adapter = ArrayAdapter(this@PeripheralActivity, android.R.layout.simple_spinner_dropdown_item,
                     FaultFactory.labels)
+                setSelection(prefs.getInt("fault", 0).coerceIn(0, FaultFactory.labels.size - 1))
+                onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
+                        prefs.edit().putInt("fault", pos).apply(); showMode()
+                    }
+                    override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+                }
             }
             col.addView(faultSpinner)
-            keepFault = CheckBox(this).apply { text = FaultFactory.keepLabel }
+            keepFault = CheckBox(this).apply {
+                text = FaultFactory.keepLabel
+                isChecked = prefs.getBoolean("keep", true) // debug build default: keep the chosen mode
+                setOnCheckedChangeListener { _, v -> prefs.edit().putBoolean("keep", v).apply() }
+            }
             col.addView(keepFault)
+            showMode()
         }
+        col.addView(notifyBox)
+        col.addView(codeField) // directly above Start: type the code, tap Start
         startBtn = Button(this).apply { text = "Start (advertise 60 s)"; setOnClickListener { onStartClicked() } }
         col.addView(startBtn)
         tagView = TextView(this).apply { textSize = 48f; gravity = Gravity.CENTER; text = "----" }
@@ -98,6 +118,11 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
         else status("Nearby devices permission denied")
     }
 
+    private fun showMode() {
+        val pos = faultSpinner?.selectedItemPosition ?: return
+        modeView?.text = "MODE: " + FaultFactory.labels[pos] + "\n" + (if (notifyBox.isChecked) "Notify+ACK" else "Indicate")
+    }
+
     private fun status(t: String) = runOnUiThread { statusView.append(t + "\n") }
     override fun onStatus(text: String) = status(text)
     override fun onTag(tag: String) { runOnUiThread { tagView.text = tag } }
@@ -105,7 +130,7 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener {
     override fun onFinished(summary: String) {
         runOnUiThread {
             statusView.append(summary + "\n")
-            if (keepFault?.isChecked != true) faultSpinner?.setSelection(0)
+            if (keepFault?.isChecked != true) faultSpinner?.setSelection(0); showMode()
             startBtn.isEnabled = true; approveBtn.isEnabled = false; tagView.text = "----"
         }
     }
