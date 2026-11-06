@@ -184,6 +184,10 @@ public:
             return kl_receiver_handle_m2(h_.get(), detail::ptr(m2), m2.size(), out, len);
         });
     }
+    // Read-only failure budget (D030): used includes an open attempt that already sent M3.
+    Status failures(std::uint8_t& used, std::uint8_t& max) const {
+        return kl_receiver_failures(h_.get(), &used, &max);
+    }
     Status finish(std::span<const std::uint8_t> m4, Channel& channel) {
         kl_channel_t* raw = nullptr;
         const Status st = kl_receiver_finish(h_.get(), detail::ptr(m4), m4.size(), &raw);

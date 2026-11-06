@@ -571,3 +571,14 @@ inject input into a window it created itself, for evidence runs; (3) input outco
 value means "input attempted" only, and password-field outcomes are UNKNOWN; (4) promoting any other target class needs the
 section 3 pass criteria (including a separate test RDP server with a throwaway synthetic account) and a new owner decision;
 (5) no UIAccess, elevation, services, drivers, clipboard or secure-desktop workaround is ever sought. D003 and D012 are unchanged.
+
+## D030 — Additive read-only failure getter `kl_receiver_failures` (ABI v3), 2026-11-06
+
+Owner-lead approved additive C ABI change. `kl_receiver_failures(r, uint8_t* out_used, uint8_t* out_max)` returns the core's
+`ReceiverSession::failures_including_open()` (attempts that sent M3 and have not succeeded, an open one included, D026) and
+`MAX_FAILURES` (3). Rationale: the macOS receiver spike derived the budget in Swift because the ABI had no counter; that copy
+could drift from the core and from the Windows receiver. The getter is read-only, exposes no code or key material, works after
+expiry/success/exhaustion (final count), and uses the existing handle registry and `KL_ERR_NULL` for bad handles or NULL out pointers.
+By the existing ABI rule (any added function bumps the version, as in D027) `KL_ABI_VERSION` is now 3; the C header, C++ wrapper
+(`Receiver::failures`) and the Android spike `EXPECTED_ABI` were updated, Swift reads the header constant. No wire-format, policy or
+scope change.

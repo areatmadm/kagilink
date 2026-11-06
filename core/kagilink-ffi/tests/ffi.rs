@@ -147,9 +147,9 @@ unsafe fn seal(c: *mut kl_channel_t, kind: u8, pt: &[u8], frag: usize) -> (Vec<u
 }
 
 #[test]
-fn abi_version_is_two() {
-    assert_eq!(kl_abi_version(), 2);
-    assert_eq!(KL_ABI_VERSION, 2);
+fn abi_version_is_three() {
+    assert_eq!(kl_abi_version(), 3);
+    assert_eq!(KL_ABI_VERSION, 3);
 }
 
 #[test]
@@ -1493,5 +1493,169 @@ fn concurrent_reassembler_hammer_with_free() {
             assert_eq!(kl_reassembler_is_dead(h), 1);
             kl_reassembler_free(h);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// kl_receiver_failures (D030): read-only failure budget getter.
+// ---------------------------------------------------------------------------------------
+
+unsafe fn failures(r: *mut kl_receiver_t) -> (kl_status_t, u8, u8) {
+    let (mut used, mut max) = (0xAAu8, 0xAAu8);
+    let rc = unsafe { kl_receiver_failures(r, &mut used, &mut max) };
+    (rc, used, max)
+}
+
+/// Starts an attempt with a wrong code and drives it to M3 sent (M4 not yet delivered).
+unsafe fn attempt_to_m3_with_wrong_code(r: *mut kl_receiver_t, code: &[u8; 6]) {
+    let mut bad = *code;
+    bad[0] = if bad[0] == b'0' { b'1' } else { b'0' };
+    let mut m1 = vec![0u8; 512];
+    let mut n = m1.len();
+    assert_eq!(
+        unsafe { kl_receiver_begin_attempt(r, m1.as_mut_ptr(), &mut n) },
+        KL_OK
+    );
+    m1.truncate(n);
+    let (rc, m2, s) = unsafe { sender_start(&bad, &m1) };
+    assert_eq!(rc, KL_OK);
+    let mut m3 = [0u8; 128];
+    let mut n3 = m3.len();
+    assert_eq!(
+        unsafe { kl_receiver_handle_m2(r, m2.as_ptr(), m2.len(), m3.as_mut_ptr(), &mut n3) },
+        KL_OK
+    );
+    unsafe { kl_sender_free(s) };
+}
+
+#[test]
+fn receiver_failures_starts_at_zero_of_three_and_is_read_only() {
+    unsafe {
+        let p = receiver_with_m1();
+        for _ in 0..3 {
+            assert_eq!(failures(p.r), (KL_OK, 0, 3));
+        }
+        // Reading did not disturb the code or the open attempt.
+        let mut code = [0u8; 6];
+        let mut n = 6usize;
+        assert_eq!(kl_receiver_code(p.r, code.as_mut_ptr(), &mut n), KL_OK);
+        assert_eq!(code, p.code);
+        kl_receiver_free(p.r);
+    }
+}
+
+#[test]
+fn receiver_failures_counts_open_attempt_only_after_m3() {
+    unsafe {
+        let p = receiver_with_m1();
+        // M1 sent only: an attempt that never sent M3 costs nothing.
+        assert_eq!(failures(p.r), (KL_OK, 0, 3));
+        // M3 sent, M4 outstanding: counted as open.
+        attempt_to_m3_with_wrong_code(p.r, &p.code);
+        assert_eq!(failures(p.r), (KL_OK, 1, 3));
+        assert_eq!(failures(p.r), (KL_OK, 1, 3));
+        // Next attempt begins: the open one is booked, the new one (no M3 yet) adds nothing.
+        let mut m1 = vec![0u8; 512];
+        let mut n = m1.len();
+        assert_eq!(
+            kl_receiver_begin_attempt(p.r, m1.as_mut_ptr(), &mut n),
+            KL_OK
+        );
+        assert_eq!(failures(p.r), (KL_OK, 1, 3));
+        // A bad M4 before M3 is refused and costs nothing.
+        let bogus = [0x14u8; 33];
+        let mut rx = null_mut();
+        assert_ne!(
+            kl_receiver_finish(p.r, bogus.as_ptr(), bogus.len(), &mut rx),
+            KL_OK
+        );
+        assert_eq!(failures(p.r), (KL_OK, 1, 3));
+        kl_receiver_free(p.r);
+    }
+}
+
+#[test]
+fn receiver_failures_is_three_of_three_after_budget_spent() {
+    unsafe {
+        let p = receiver_with_m1();
+        let bogus = [0x14u8; 33];
+        // Three attempts that each reach M3 and then get a bad M4.
+        for i in 0..3u8 {
+            attempt_to_m3_with_wrong_code(p.r, &p.code);
+            let mut rx = null_mut();
+            assert_ne!(
+                kl_receiver_finish(p.r, bogus.as_ptr(), bogus.len(), &mut rx),
+                KL_OK
+            );
+            assert!(rx.is_null());
+            assert_eq!(failures(p.r), (KL_OK, i + 1, 3));
+        }
+        // Receiver inactive: code destroyed, the count stays final and is not an error.
+        let mut code = [0u8; 6];
+        let mut n = 6usize;
+        assert_eq!(
+            kl_receiver_code(p.r, code.as_mut_ptr(), &mut n),
+            KL_ERR_TOO_MANY_FAILURES
+        );
+        assert_eq!(failures(p.r), (KL_OK, 3, 3));
+        assert_eq!(failures(p.r), (KL_OK, 3, 3));
+        kl_receiver_free(p.r);
+    }
+}
+
+#[test]
+fn receiver_failures_keeps_working_after_success() {
+    unsafe {
+        let (r, s, rx, tx) = handshake();
+        assert_eq!(failures(r), (KL_OK, 0, 3));
+        kl_channel_free(rx);
+        kl_channel_free(tx);
+        kl_sender_free(s);
+        kl_receiver_free(r);
+    }
+}
+
+#[test]
+fn receiver_failures_rejects_null_stale_and_wrong_type_handles() {
+    unsafe {
+        let (mut used, mut max) = (0xAAu8, 0xAAu8);
+        assert_eq!(
+            kl_receiver_failures(null_mut(), &mut used, &mut max),
+            KL_ERR_NULL
+        );
+        let mut r = null_mut();
+        assert_eq!(kl_receiver_new(null(), 0, null(), 0, &mut r), KL_OK);
+        // NULL out pointers: rejected, nothing written.
+        assert_eq!(kl_receiver_failures(r, null_mut(), &mut max), KL_ERR_NULL);
+        assert_eq!(kl_receiver_failures(r, &mut used, null_mut()), KL_ERR_NULL);
+        assert_eq!(kl_receiver_failures(r, null_mut(), null_mut()), KL_ERR_NULL);
+        assert_eq!((used, max), (0xAA, 0xAA));
+        assert_eq!(failures(r), (KL_OK, 0, 3));
+        // Wrong object type with a live token.
+        let (r2, s, rx, tx) = handshake();
+        assert_eq!(
+            kl_receiver_failures(rx as *mut kl_receiver_t, &mut used, &mut max),
+            KL_ERR_NULL
+        );
+        // Stale handle after free, also after the slot is reused by a new receiver.
+        kl_receiver_free(r);
+        assert_eq!(kl_receiver_failures(r, &mut used, &mut max), KL_ERR_NULL);
+        let mut r3 = null_mut();
+        assert_eq!(kl_receiver_new(null(), 0, null(), 0, &mut r3), KL_OK);
+        assert_eq!(kl_receiver_failures(r, &mut used, &mut max), KL_ERR_NULL);
+        assert_eq!(failures(r3), (KL_OK, 0, 3));
+        // Forged garbage token.
+        used = 0xAA;
+        max = 0xAA;
+        assert_eq!(
+            kl_receiver_failures(0x7fff_1234usize as *mut kl_receiver_t, &mut used, &mut max),
+            KL_ERR_NULL
+        );
+        assert_eq!((used, max), (0xAA, 0xAA));
+        kl_receiver_free(r3);
+        kl_channel_free(rx);
+        kl_channel_free(tx);
+        kl_sender_free(s);
+        kl_receiver_free(r2);
     }
 }

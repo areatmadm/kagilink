@@ -15,7 +15,7 @@ package com.areatm.kagilink.spike
  * `val h = AtomicLong(raw)` and `val prev = h.getAndSet(0); if (prev != 0L) free(prev)`.
  */
 object Native {
-    const val EXPECTED_ABI = 2
+    const val EXPECTED_ABI = 3
 
     const val KIND_CONTROL = 1
     const val KIND_SECRET = 2

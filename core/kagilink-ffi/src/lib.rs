@@ -28,7 +28,9 @@ use areatm_kagilink_core::transport::{
     Message, SecureChannel, MAX_FRAGMENTS, MAX_FRAGMENT_PAYLOAD, MAX_MESSAGE,
 };
 use areatm_kagilink_core::wire::{NONCE_LEN, SHARE_LEN, SID_LEN, SUITE, TAG_LEN};
-use areatm_kagilink_core::{os_rng, Code, Error, ReceiverSession, SenderPending, SystemClock};
+use areatm_kagilink_core::{
+    os_rng, Code, Error, ReceiverSession, SenderPending, SystemClock, MAX_FAILURES,
+};
 use std::any::Any;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
@@ -37,7 +39,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use zeroize::Zeroize;
 
 /// ABI version returned by [`kl_abi_version`]. Bumped on any signature change.
-pub const KL_ABI_VERSION: u32 = 2;
+pub const KL_ABI_VERSION: u32 = 3;
 
 /// Upper bound accepted for any single input length (sanity check, bytes).
 const MAX_IN: usize = 1 << 20;
@@ -533,7 +535,7 @@ const M4_LEN: usize = 1 + TAG_LEN;
 // General
 // ---------------------------------------------------------------------------------------
 
-/// Returns the ABI version (currently 2). Hosts must refuse to run on mismatch.
+/// Returns the ABI version (currently 3). Hosts must refuse to run on mismatch.
 #[no_mangle]
 pub extern "C" fn kl_abi_version() -> u32 {
     KL_ABI_VERSION
@@ -683,6 +685,38 @@ pub unsafe extern "C" fn kl_receiver_finish(
         let tok = new_channel(ch)?;
         // SAFETY: out_channel validated non-null and writable above.
         unsafe { *out_channel = token_ptr(tok) };
+        Ok(())
+    })
+}
+
+/// Read the receiver's failure budget use: `*out_used` = failed attempts so far plus one if an
+/// attempt that already sent M3 is still open (core `failures_including_open`, D026), and
+/// `*out_max` = the budget (3). Read-only: no state change, no code or key material. Still works
+/// after expiry, success or budget exhaustion (final count, no error); only a NULL/stale handle,
+/// a freed receiver or NULL out pointers fail.
+///
+/// # Safety
+/// `r` a live handle or NULL; `out_used` and `out_max` writable or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn kl_receiver_failures(
+    r: *mut kl_receiver_t,
+    out_used: *mut u8,
+    out_max: *mut u8,
+) -> kl_status_t {
+    run(|| {
+        let r = handle::<ReceiverObj, _>(r)?;
+        if out_used.is_null() || out_max.is_null() {
+            return Err(KL_ERR_NULL);
+        }
+        let used = lock(&r.inner)?
+            .as_ref()
+            .ok_or(KL_ERR_NULL)?
+            .failures_including_open();
+        // SAFETY: both pointers validated non-null above; the caller guarantees writability.
+        unsafe {
+            *out_used = used;
+            *out_max = MAX_FAILURES;
+        }
         Ok(())
     })
 }
@@ -1267,4 +1301,45 @@ pub unsafe extern "C" fn kl_parse_ack(
         }
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use areatm_kagilink_core::{ManualClock, CODE_TTL_MS};
+
+    /// Expiry needs a controllable clock, which the C ABI deliberately does not expose, so the
+    /// receiver is built here with a `ManualClock` and registered like `kl_receiver_new` does.
+    #[test]
+    fn receiver_failures_reports_final_count_after_expiry() {
+        let clock = Arc::new(ManualClock::new());
+        let mut rng = os_rng();
+        let s = ReceiverSession::new(clock.clone(), &mut rng, b"rx", b"c").unwrap();
+        let tok = register(ReceiverObj {
+            inner: Mutex::new(Some(s)),
+            id_len: 2,
+            claims_len: 1,
+        })
+        .unwrap();
+        let r: *mut kl_receiver_t = token_ptr(tok);
+        let (mut used, mut max) = (0xAAu8, 0xAAu8);
+        // SAFETY: valid handle and writable outputs.
+        unsafe {
+            assert_eq!(kl_receiver_failures(r, &mut used, &mut max), KL_OK);
+            assert_eq!((used, max), (0, 3));
+            clock.advance(CODE_TTL_MS + 1);
+            let mut code = [0u8; 6];
+            let mut n = 6usize;
+            assert_eq!(
+                kl_receiver_code(r, code.as_mut_ptr(), &mut n),
+                KL_ERR_EXPIRED
+            );
+            used = 0xAA;
+            max = 0xAA;
+            assert_eq!(kl_receiver_failures(r, &mut used, &mut max), KL_OK);
+            assert_eq!((used, max), (0, 3));
+            kl_receiver_free(r);
+            assert_eq!(kl_receiver_failures(r, &mut used, &mut max), KL_ERR_NULL);
+        }
+    }
 }
