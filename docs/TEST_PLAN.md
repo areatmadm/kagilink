@@ -48,7 +48,8 @@ API result and synthetic outcome. Avoid collecting usernames or device addresses
 
 | Scenario | Pass condition | Current evidence |
 |---|---|---|
-| Windows own edit | Complete SendInput count AND exact owned-control readback | Manual --self-input; separate from RDP |
+| Windows own edit | Complete SendInput count AND exact owned-control readback | Rust input-probe 56/56 + readback with owner click (2026-11-06); C++ --self-input without click: focus not granted, nothing sent; see docs/PHASE5_RDP_INPUT_FEASIBILITY.md; separate from RDP |
+| mstsc/CredUI/secure desktop/elevated target | Unsupported unless section 3.2 evidence (separate test RDP server, throwaway synthetic account); password fields cannot be read back | NOT RUN; policy unchanged (proposed D029) |
 | Windows diagnostic GUI | Direct launch, readable result/status, keyboard navigation, scaling and cancel/close without orphan child | Manual open, inventory/start/stop/restart/no-sender/details and one window-size screenshot observed; broad keyboard/DPI/high-contrast/screenreader and close/deadline cases NOT RUN |
 | Focus steal | Abort when foreground/focus changes; no false success | NOT RUN; races remain |
 | Credential UI | Explicit blocked/unsupported result at ordinary integrity | NOT RUN; documented restriction |
