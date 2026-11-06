@@ -65,8 +65,11 @@ function Get-AllScenarios {
         (New-Def 'e1' 'e1' 'indicate' 'FAIL' @('Timeout') 0),
         (New-Def 'e2' 'e2' 'indicate' 'OK' @() -1),
         (New-Def 'e3' 'e3' 'indicate' 'FAIL' @('Timeout') 0),
-        (New-Def 'f-indicate' 'f' 'indicate' 'FAIL' @('Core(Authentication)') 1),
-        (New-Def 'f-notify' 'f' 'notify' 'FAIL' @('Core(Authentication)') 1),
+        # f: the handshake already succeeded (code consumed) and only the SECRET fragment is corrupted, so the
+        # channel closes with Core(Authentication) but the failure budget is NOT used (expected 0/3; field run
+        # 2026-11-06 showed 0/3 and the earlier expectation of 1/3 was wrong).
+        (New-Def 'f-indicate' 'f' 'indicate' 'FAIL' @('Core(Authentication)') 0),
+        (New-Def 'f-notify' 'f' 'notify' 'FAIL' @('Core(Authentication)') 0),
         (New-Def 'repeat-b3' 'b' 'indicate' 'FAIL' @('Core(ConfirmationFailed)') 3 $true)
     )
 }
