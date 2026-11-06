@@ -79,3 +79,29 @@ of the code. Pick the mode in the spinner BEFORE typing the code.
 - [ ] 6. Optional, c `DROP_AFTER_M3` as in step 5 (budget 1/3 -> 2/3 -> 3/3).
 - [ ] 7. Untick "keep fault selected" and run one normal transfer (mode none) to confirm the app is healthy.
 - [ ] 8. Give the PC output of every step to the Android session; it pairs it with the phone log by tag/time.
+
+## adb test hook (debug build only)
+
+Lets a PC harness start a session without typing the code. Compiled only into the debug build
+(`src/debug`, receiver `TestStartReceiver`, protected by `android.permission.DUMP`, which the adb
+shell holds and normal apps cannot get). Release has neither the class nor the manifest entry
+(`check-no-faults-in-release.sh` checks both). The app screen must be open (a backgrounded session
+fails closed): `adb shell am start -n com.areatm.kagilink.spike.peripheral/.PeripheralActivity`.
+
+Extras: `code` (6 digits), `fault` (`none a b c d1 d2 d3 e1 e2 e3 f`), `gatt` (`indicate` | `notify`).
+A new TEST_START ends a running session and starts a new one (new KL-XXXX tag), so the same code can
+be reused for repeated attempts. For `f` the synthetic SECRET is approved automatically (test only).
+Log lines (tag `KLV1`, never the code): `TEST started tag=KL-XXXX fault=<NAME> gatt=<mode> utc=...` and
+`TEST ended fault=<NAME> outcome=<ok|stopped|disconnected|dropped|timeout|framing|failed> utc=...`;
+refusals are logged as `TEST start refused: <reason>`.
+
+IMPORTANT: `adb shell am broadcast ... --es code 123456` is logged by adbd itself in the device logcat
+(`adbd service requested 'shell,...'`) including the code. Avoid that by sending the command on the
+shell's stdin (verified: the code then appears nowhere in logcat):
+
+    echo "am broadcast -a com.areatm.kagilink.spike.peripheral.TEST_START \
+      -n com.areatm.kagilink.spike.peripheral/.TestStartReceiver \
+      --es code 123456 --es fault b --es gatt indicate; exit" | adb shell
+
+The 6-digit code is a short-lived (60 s) synthetic test code, but treat the adb channel as inside the
+owner's trusted PC.

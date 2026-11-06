@@ -31,12 +31,23 @@ object FaultFactory {
     val labels: List<String> = Kind.values().map { it.label }
     const val heading = "TEST ONLY fault injection (resets to none after each run unless kept):"
     const val keepLabel = "keep fault selected after a run (for repeated attempts)"
-    fun create(index: Int): FaultPlan = if (index <= 0) NoFaults else Impl(Kind.values()[index])
+    fun create(index: Int): FaultPlan = if (index <= 0) NoFaults else Impl(Kind.values()[index], false)
 
-    private class Impl(private val k: Kind) : FaultPlan {
+    /** adb test hook: codes none,a,b,c,d1,d2,d3,e1,e2,e3,f. Sessions log TEST started/ended. */
+    fun createTest(code: String): FaultPlan? {
+        val kind = when (code) {
+            "none" -> Kind.NONE; "a" -> Kind.GARBAGE_M2; "b" -> Kind.TAMPER_M4; "c" -> Kind.DROP_AFTER_M3
+            "d1" -> Kind.CHUNK_DUP; "d2" -> Kind.CHUNK_DROP; "d3" -> Kind.CHUNK_SWAP
+            "e1" -> Kind.NO_RESPONSE; "e2" -> Kind.DELAY_M2; "e3" -> Kind.DELAY_M2_LONG
+            "f" -> Kind.TAMPER_SECRET; else -> return null
+        }
+        return Impl(kind, true)
+    }
+
+    private class Impl(private val k: Kind, private val viaHook: Boolean) : FaultPlan {
         override val name = k.name
         override val label = k.label
-        override val armed = true
+        override val armed = k != Kind.NONE
         override val notice = "FAULT INJECTION ARMED: ${k.label}"
         private fun injected(what: String) = Log.i(TAG, "fault injected: $what")
 
@@ -75,6 +86,16 @@ object FaultFactory {
             injected("M4 one byte flipped")
             return m4
         }
+
+        override fun onSessionStart(tag: String, gatt: String, utc: String) {
+            if (viaHook) Log.i(TAG, "TEST started tag=KL-$tag fault=${k.name} gatt=$gatt utc=$utc")
+        }
+
+        override fun onSessionEnd(outcome: String, utc: String) {
+            if (viaHook) Log.i(TAG, "TEST ended fault=${k.name} outcome=$outcome utc=$utc")
+        }
+
+        override fun autoApprove() = viaHook && k == Kind.TAMPER_SECRET // test automation, synthetic data
 
         override fun secretFragment(index: Int, frag: ByteArray): ByteArray {
             if (k != Kind.TAMPER_SECRET || index != 0) return frag

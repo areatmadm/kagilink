@@ -108,7 +108,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
 
     /** [codeDigits] is wiped by this class once used or on cleanup. */
     fun start(codeDigits: ByteArray, notifyMode: Boolean, requested: FaultPlan = NoFaults) = h.post {
-        if (state != State.IDLE) { ui.onStatus("already running"); return@post }
+        if (state != State.IDLE) { Native.secureWipe(codeDigits); ui.onStatus("already running"); return@post }
         code = codeDigits
         useIndicate = !notifyMode
         plan = requested
@@ -128,6 +128,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
         val utc = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
         Log.i(TAG, "session start utc=$utc tag=KL-$advTag mode=${if (useIndicate) "indicate" else "notify"} fault=${plan.name}")
         ui.onStatus("session start $utc UTC, tag KL-$advTag")
+        plan.onSessionStart(advTag, if (useIndicate) "indicate" else "notify", utc.toString())
         val server = manager.openGattServer(ctx, serverCallback)
         if (server == null) { finish("openGattServer failed"); return@post }
         gatt = server
@@ -386,6 +387,7 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
                 sendMessage(Framing.MTYPE_HANDSHAKE, m4)
                 ui.onStatus("M3 verified, M4 sent; secure channel open")
                 ui.onApprovalReady()
+                if (plan.autoApprove()) approveAndSendSecret() // debug test hook only
             }
             m.mtype == Framing.MTYPE_CHANNEL && state == State.CHANNEL -> {
                 val plain = ByteArray(1024); val len = longArrayOf(plain.size.toLong()); val info = IntArray(2)
@@ -401,6 +403,16 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
     }
 
     // ---- teardown ----------------------------------------------------------------------------
+
+    private fun outcomeWord(reason: String, ok: Boolean) = when {
+        ok -> "ok"
+        reason.contains("stopped by user") -> "stopped"
+        reason.contains("central disconnected") -> "disconnected"
+        reason.contains("disconnected right after") -> "dropped"
+        reason.contains("within") || reason.contains("did not enable") || reason.contains("session bound") -> "timeout"
+        reason.contains("framing") -> "framing"
+        else -> "failed"
+    }
 
     private fun finish(reason: String, ok: Boolean = false) {
         if (finishing) return
@@ -424,6 +436,8 @@ class PeripheralSession(private val ctx: Context, private val ui: Listener) {
             "acks=$acksReceived adv->connect=${if (connectMs > 0 && advStartMs > 0) connectMs - advStartMs else -1}ms " +
             "connect->cccd=${if (cccdMs > 0) cccdMs - connectMs else -1}ms"
         Log.i(TAG, summary)
+        plan.onSessionEnd(outcomeWord(reason, ok),
+            java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString())
         ui.onFinished(summary)
         state = State.IDLE
         reassembler = Framing.Reassembler()
