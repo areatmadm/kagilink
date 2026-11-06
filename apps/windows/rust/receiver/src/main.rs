@@ -54,7 +54,8 @@ fn ask_acknowledgment() -> bool {
     print!("Type YES to acknowledge and continue (anything else cancels): ");
     let _ = io::stdout().flush();
     let mut line = String::new();
-    io::stdin().lock().read_line(&mut line).is_ok() && line.trim() == "YES"
+    io::stdin().lock().read_line(&mut line).is_ok()
+        && areatm_kagilink_receiver::selection::clean_input(&line) == "YES"
 }
 
 /// Assess, show the decision, require the risk-notice acknowledgment (D023) and return the gate.
@@ -284,7 +285,9 @@ fn ble_receive(args: &[String]) -> ExitCode {
         let Some(index) = list.index_for_choice(&typed) else {
             println!(
                 "No valid row chosen. Nothing was connected. (typed {} characters, {} rows listed)",
-                typed.trim().chars().count(),
+                areatm_kagilink_receiver::selection::clean_input(&typed)
+                    .chars()
+                    .count(),
                 list.entries().len()
             );
             return ExitCode::from(2);
@@ -318,7 +321,7 @@ fn ble_receive(args: &[String]) -> ExitCode {
         let _ = io::stdout().flush();
         let mut line = String::new();
         let _ = io::stdin().lock().read_line(&mut line);
-        if line.trim() != "y" {
+        if areatm_kagilink_receiver::selection::clean_input(&line) != "y" {
             return ExitCode::from(1);
         }
     }
