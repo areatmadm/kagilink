@@ -90,7 +90,7 @@ fails closed): `adb shell am start -n com.areatm.kagilink.spike.peripheral/.Peri
 
 Extras: `code` (6 digits), `fault` (`none a b c d1 d2 d3 e1 e2 e3 f`), `gatt` (`indicate` | `notify`).
 A new TEST_START ends a running session and starts a new one (new KL-XXXX tag), so the same code can
-be reused for repeated attempts. For `f` the synthetic SECRET is approved automatically (test only).
+be reused for repeated attempts. In every fault mode (including `none` and `e2`) the synthetic SECRET is approved automatically for sessions started by TEST_START (logged as `TEST auto-approve=yes`); sessions started with the Start button still need the Approve button.
 Log lines (tag `KLV1`, never the code): `TEST started tag=KL-XXXX fault=<NAME> gatt=<mode> utc=...` and
 `TEST ended fault=<NAME> outcome=<ok|stopped|disconnected|dropped|timeout|framing|failed> utc=...`;
 refusals are logged as `TEST start refused: <reason>`.
