@@ -136,3 +136,79 @@ fn abandoned_attempt_after_m3_shows_in_the_open_count_before_it_is_counted() {
         "a garbage M2 costs nothing"
     );
 }
+
+// ---- secret sink (own-window input, D029 position) ----
+
+use areatm_kagilink_receiver::session::{run_attempt_with_sink, SecretSink};
+
+struct Capture {
+    seen: Vec<u8>,
+    calls: usize,
+    accept: bool,
+}
+
+impl SecretSink for Capture {
+    fn deliver(&mut self, plaintext: &[u8]) -> bool {
+        self.calls += 1;
+        self.seen = plaintext.to_vec();
+        self.accept
+    }
+}
+
+#[test]
+fn sink_receives_the_secret_exactly_once_and_result_is_sent() {
+    let (mut rx, code) = new_rx();
+    let mut phone = FakeSender::new(&code, SECRET, Behaviour::Honest, 64, false);
+    let mut rng = os_rng();
+    let mut sink = Capture {
+        seen: Vec::new(),
+        calls: 0,
+        accept: true,
+    };
+    let r = run_attempt_with_sink(&mut phone, &mut rx, &mut rng, &mut sink).unwrap();
+    assert_eq!(sink.calls, 1);
+    assert_eq!(sink.seen, SECRET);
+    assert_eq!(r.received_len, SECRET.len());
+    assert_eq!(phone.results_received, 1);
+}
+
+#[test]
+fn refusing_sink_fails_closed_without_a_result() {
+    let (mut rx, code) = new_rx();
+    let mut phone = FakeSender::new(&code, SECRET, Behaviour::Honest, 64, false);
+    let mut rng = os_rng();
+    let mut sink = Capture {
+        seen: Vec::new(),
+        calls: 0,
+        accept: false,
+    };
+    let r = run_attempt_with_sink(&mut phone, &mut rx, &mut rng, &mut sink);
+    assert_eq!(r, Err(SessionError::DeliveryRefused));
+    assert_eq!(sink.calls, 1);
+    assert_eq!(
+        phone.results_received, 0,
+        "no RESULT may be sent after a refused delivery"
+    );
+}
+
+#[test]
+fn sink_is_not_called_for_a_tampered_or_failed_attempt() {
+    for b in [
+        Behaviour::WrongCode,
+        Behaviour::TamperM4,
+        Behaviour::TamperSecret,
+        Behaviour::DropAfterM3,
+    ] {
+        let (mut rx, code) = new_rx();
+        let mut phone = FakeSender::new(&code, SECRET, b, 64, false);
+        let mut rng = os_rng();
+        let mut sink = Capture {
+            seen: Vec::new(),
+            calls: 0,
+            accept: true,
+        };
+        let r = run_attempt_with_sink(&mut phone, &mut rx, &mut rng, &mut sink);
+        assert!(r.is_err(), "{b:?}");
+        assert_eq!(sink.calls, 0, "{b:?}: nothing may reach the sink");
+    }
+}

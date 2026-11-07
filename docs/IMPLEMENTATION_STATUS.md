@@ -790,3 +790,13 @@ Isolated Hyper-V test VM built with `tools/New-RdpTestVm.ps1` and its isolation 
 that the Windows 11 RDP credential prompt (`CredentialUIBroker`, XAML host) exposes no UI Automation elements, so target verification is
 impossible and the harness fails closed. No input run was executed. RDP and CredUI input stays unsupported (D029 proposed, awaiting
 the owner's explicit adoption). Real-secret transfer stays disabled (D012).
+
+## Addendum 2026-11-07: own-window input sink (D031)
+
+Built and tested on Windows (host tests only): `areatm-own-window-input` crate, `SecretSink` hook in the receiver session driver
+(`run_attempt_with_sink`; `run_attempt` unchanged for existing callers), CLI flag `--own-window [--show-text]` on `fake-session` and
+`ble-receive`. Executed: cargo clippy -D warnings clean; unit tests for value validation; session tests (sink gets the secret once and
+RESULT is sent; refusing sink fails closed with no RESULT; sink never called on wrong-code, tampered M4/SECRET or dropped attempts);
+a run of `fake-session --own-window` with nobody clicking printed "NOT typed (the test window was not active)" and failed closed.
+NOT yet executed: the positive path (window active, text typed and read back) through this new code and any run with the real phone;
+the earlier `input-probe` run proved the same SendInput mechanism for an own window only. Real-secret transfer stays disabled (D012).

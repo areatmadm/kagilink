@@ -7,11 +7,14 @@
 
 use areatm_kagilink_core::{os_rng, Clock, ReceiverSession, SystemClock};
 use areatm_kagilink_receiver::fake_sender::{Behaviour, FakeSender};
-use areatm_kagilink_receiver::session::{run_attempt, SessionError};
+use areatm_kagilink_receiver::session::{
+    run_attempt_with_sink, DiscardSink, SecretSink, SessionError,
+};
 use areatm_kagilink_receiver::{
     assess, decide, run_loopback, Decision, GateError, LoopbackError, TransferGate, NOTICE_EN,
     NOTICE_KO, RAM_ONLY_WARNING_EN, RAM_ONLY_WARNING_KO,
 };
+use areatm_own_window_input::{Outcome, OwnWindowSink};
 use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -121,6 +124,44 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
+/// Types the received SYNTHETIC value into a window this program created (D029 position). It prints the
+/// outcome only, never the value.
+struct WindowSink(OwnWindowSink);
+
+impl SecretSink for WindowSink {
+    fn deliver(&mut self, plaintext: &[u8]) -> bool {
+        let outcome = self.0.deliver(plaintext);
+        match outcome {
+            Outcome::Delivered { chars } => {
+                println!("Own-window input: {chars} characters typed and read back from our own box.")
+            }
+            Outcome::NotForeground => println!(
+                "Own-window input: NOT typed (the test window was not active). Click its box before sending."
+            ),
+            other => println!("Own-window input: not delivered ({other:?})."),
+        }
+        matches!(outcome, Outcome::Delivered { .. })
+    }
+}
+
+/// `--own-window` opens the test window; `--show-text` leaves the box unmasked (synthetic demos only).
+fn open_window_sink(args: &[String]) -> Result<Option<WindowSink>, ExitCode> {
+    if !args.iter().any(|a| a == "--own-window") {
+        return Ok(None);
+    }
+    let show = args.iter().any(|a| a == "--show-text");
+    match OwnWindowSink::open(show) {
+        Ok(s) => {
+            println!("Test window opened. Click its box, then send from the phone (synthetic data only).");
+            Ok(Some(WindowSink(s)))
+        }
+        Err(e) => {
+            println!("Could not open the test window: {e:?}");
+            Err(ExitCode::from(1))
+        }
+    }
+}
+
 fn report_attempt(
     result: Result<areatm_kagilink_receiver::session::ReceiveReport, SessionError>,
 ) -> ExitCode {
@@ -182,6 +223,10 @@ fn fake_session(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    let mut window = match open_window_sink(args) {
+        Ok(w) => w,
+        Err(c) => return c,
+    };
     let code = rx.code().map(str::to_owned).unwrap_or_default();
     println!("Fake phone: behaviour {behaviour:?}, chunk {chunk}, notify {notify}, mode {mode:?}");
     let mut phone = FakeSender::new(
@@ -191,7 +236,12 @@ fn fake_session(args: &[String]) -> ExitCode {
         chunk,
         notify,
     );
-    report_attempt(run_attempt(&mut phone, &mut rx, &mut rng))
+    let mut discard = DiscardSink;
+    let sink: &mut dyn SecretSink = match window.as_mut() {
+        Some(w) => w,
+        None => &mut discard,
+    };
+    report_attempt(run_attempt_with_sink(&mut phone, &mut rx, &mut rng, sink))
 }
 
 /// Real BLE session: show the code, scan, let the USER choose a row, connect, run one attempt.
@@ -218,6 +268,10 @@ fn ble_receive(args: &[String]) -> ExitCode {
             println!("Core error: {e:?}");
             return ExitCode::from(1);
         }
+    };
+    let mut window = match open_window_sink(args) {
+        Ok(w) => w,
+        Err(c) => return c,
     };
     let code = rx.code().map(str::to_owned).unwrap_or_default();
     println!("Code (valid 60 s): {code}");
@@ -307,7 +361,12 @@ fn ble_receive(args: &[String]) -> ExitCode {
             }
         };
         println!("Attempt started: {}", utc_stamp());
-        let result = run_attempt(&mut link, &mut rx, &mut rng);
+        let mut discard = DiscardSink;
+        let sink: &mut dyn SecretSink = match window.as_mut() {
+            Some(w) => w,
+            None => &mut discard,
+        };
+        let result = run_attempt_with_sink(&mut link, &mut rx, &mut rng, sink);
         // Release the link now (not after the retry prompt) so Windows can drop its connection to the phone.
         drop(link);
         println!(
