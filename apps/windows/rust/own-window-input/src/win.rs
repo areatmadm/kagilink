@@ -11,17 +11,19 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, SendInput, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
     KEYEVENTF_UNICODE, VIRTUAL_KEY,
 };
+use windows::Win32::UI::WindowsAndMessaging::FlashWindowEx;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetForegroundWindow,
     GetWindowTextLengthW, GetWindowTextW, PeekMessageW, RegisterClassW, SetForegroundWindow,
-    SetWindowTextW, ShowWindow, TranslateMessage, CW_USEDEFAULT, ES_AUTOHSCROLL, ES_PASSWORD, MSG,
-    PM_REMOVE, SW_SHOW, WINDOW_STYLE, WNDCLASSW, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
-    WS_VISIBLE,
+    SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, CW_USEDEFAULT, ES_AUTOHSCROLL,
+    ES_PASSWORD, FLASHWINFO, FLASHW_ALL, FLASHW_TIMERNOFG, HWND_TOPMOST, MSG, PM_REMOVE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOW, WINDOW_STYLE, WNDCLASSW, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 use zeroize::Zeroizing;
 
 /// How long a delivery waits for the user to have the test window active before giving up.
-const FOREGROUND_GRACE: Duration = Duration::from_secs(2);
+const FOREGROUND_GRACE: Duration = Duration::from_secs(20);
 /// Time allowed for queued input to reach the edit box before it is read back.
 const SETTLE: Duration = Duration::from_millis(700);
 
@@ -227,6 +229,16 @@ fn window_thread(show_text: bool, ready: Sender<Result<(), String>>, cmds: Recei
             }
         };
         let _ = ShowWindow(hwnd, SW_SHOW);
+        // Keep the test window above other windows so it is not lost behind them (no activation).
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
         // Windows may refuse to bring a background program forward; this does not work around that.
         let _ = SetForegroundWindow(hwnd);
         let _ = ready.send(Ok(()));
@@ -251,6 +263,22 @@ fn window_thread(show_text: bool, ready: Sender<Result<(), String>>, cmds: Recei
 unsafe fn deliver_one(hwnd: HWND, edit: HWND, label: HWND, text: &[u16]) -> Outcome {
     // SAFETY: Win32 calls on windows owned by this thread; no pointer outlives its call.
     unsafe {
+        if GetForegroundWindow() != hwnd {
+            // A value is waiting: make the window easy to find and say what to do. Flashing and a
+            // topmost z-order do not take the foreground; only the user's click does.
+            set_text(
+                label,
+                "A VALUE ARRIVED: CLICK THE BOX BELOW NOW (waiting 20 s).",
+            );
+            let fi = FLASHWINFO {
+                cbSize: std::mem::size_of::<FLASHWINFO>() as u32,
+                hwnd,
+                dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG,
+                uCount: 0,
+                dwTimeout: 0,
+            };
+            let _ = FlashWindowEx(&fi);
+        }
         let deadline = Instant::now() + FOREGROUND_GRACE;
         while GetForegroundWindow() != hwnd && Instant::now() < deadline {
             pump(50);
