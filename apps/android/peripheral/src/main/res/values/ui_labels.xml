@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="risk_continue">Continue</string>
+    <string name="risk_full_open">Show full notice</string>
+    <string name="risk_full_close">Hide full notice</string>
+    <string name="risk_unavailable">The notice text cannot be loaded. Transfers are disabled.</string>
+</resources>

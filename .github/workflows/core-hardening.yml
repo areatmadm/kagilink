@@ -13,6 +13,15 @@ jobs:
           persist-credentials: false
       - name: Scan tracked files for personal identifiers
         run: sh tools/check-no-personal-ids.sh
+  risk-notice-strings:
+    # D023: the Android risk notice resources equal docs/RISK_NOTICE.md, no forbidden wording, version lock holds.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check risk notice strings
+        run: python3 tools/check-risk-notice-strings.py
   supply-chain:
     runs-on: ubuntu-latest
     steps:

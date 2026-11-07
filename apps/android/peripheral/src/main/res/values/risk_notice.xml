@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GENERATED from docs/RISK_NOTICE.md by tools/check-risk-notice-strings.py (write mode). DRAFT text, not legally reviewed. Do not edit by hand. -->
+<resources>
+    <string name="risk_short_1">If the receiving PC has a keylogger or malware, your password can be exposed and KagiLink cannot stop it.</string>
+    <string name="risk_short_2">Send only one-time passwords and change them afterwards. All responsibility is yours.</string>
+    <string name="risk_checkbox">I understand and send at my own responsibility.</string>
+    <string name="risk_draft_marker">Draft text, not reviewed by a lawyer.</string>
+    <string name="risk_full_title">KagiLink risk notice and disclaimer (draft)</string>
+    <string name="risk_full_1">No warranty. KagiLink is a personally developed open-source project (Apache-2.0) provided \"as is\", without warranty of any kind.</string>
+    <string name="risk_full_2">User responsibility. You use it at your own judgment and risk. To the maximum extent permitted by law, the developer (AreaTM) and contributors are not liable for any loss or exposure (of passwords, accounts, money, data or otherwise) arising from using or being unable to use this software.</string>
+    <string name="risk_full_3">Risk on the receiving PC. If the receiving PC has a keylogger, malware, screen-capture tool, administrator tooling or a hardware keylogger, the transferred password can be exposed. KagiLink cannot detect or prevent this. Internet cafe and shared PCs are especially risky. KagiLink has no duty to find keyloggers or malware already installed and does not claim it can. It does make the parts it controls (encryption, confirmation, time limit, approval, key protection) as safe as practical.</string>
+    <string name="risk_full_4">Limits of TPM and device checks. Information obtained from a TPM or similar means is only what that device claims. It is not a guarantee of safety; do not read it as \"safe\" or \"verified\".</string>
+    <string name="risk_full_5">Recommendations. Send only one-time passwords or passwords you will change. Change the password after the transfer. Do not use it for sensitive accounts such as banking. Prefer PCs you control.</string>
+    <string name="risk_full_6">This notice is a draft; legal effect may differ by jurisdiction.</string>
+</resources>

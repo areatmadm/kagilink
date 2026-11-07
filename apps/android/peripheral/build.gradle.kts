@@ -31,6 +31,8 @@ android {
 }
 // Share the thin JNI binding (binding/Native.kt only; SpikeMain.kt stays in the test).
 android.sourceSets.getByName("main").kotlin.directories.add("../ffi-spike/binding")
+// Pure-Kotlin risk acknowledgement logic (tests live in riskack/test and are not part of the app).
+android.sourceSets.getByName("main").kotlin.directories.add("../riskack/src")
 kotlin {
     compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="risk_ack_checkbox" type="id" />
+    <item name="risk_ack_continue" type="id" />
+    <item name="risk_ack_full_button" type="id" />
+    <item name="risk_ack_unavailable" type="id" />
+    <item name="risk_ack_box" type="id" />
+    <item name="start_form" type="id" />
+    <item name="start_button" type="id" />
+</resources>
