@@ -823,3 +823,12 @@ Limits: the stored record is local `UserDefaults` (version, receiver hash when k
 claimed receiver identity is not wired anywhere yet, so the skip path (same version and stable receiver) is exercised only by unit tests.
 The full notice contains the words "안전함"/"검증됨"/"safe"/"verified" only inside item 4, which says a device result is NOT such a
 guarantee; the test allows that item alone. No legal sufficiency is claimed.
+
+### D031 real-phone result, 2026-11-07 (iPhone 15 Pro normal build, Windows PC, synthetic value)
+
+`ble-receive --own-window --seconds 25 --choose 1` (one phone in range, `--choose` used only for this home test so the focus stays on the
+test window): handshake and transfer succeeded, "33 characters typed and read back from our own box", "Transfer OK: 33 bytes received".
+Earlier same-day attempts were refused safely ("NOT typed", failure budget 0/3, no RESULT) because the test window was behind other
+windows or lost focus when the row was typed in the terminal; fixes: window kept topmost without activation, taskbar flash plus an
+on-window prompt, and a 20 s wait for the user's click. Lessons: the user must click the box; typing in another window takes the foreground
+away. Not tested: Android sender, other PCs, other targets (unsupported, Phase 5). Real-secret transfer stays disabled (D012).
