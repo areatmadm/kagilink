@@ -1,13 +1,21 @@
 import SwiftUI
+#if canImport(KagiLinkRiskAck)
+import KagiLinkRiskAck
+#endif
 
 @main
 struct SpikeApp: App {
     @StateObject private var spike = PeripheralSpike()
     @Environment(\.scenePhase) private var phase
     @State private var code = ""
+    // D023 risk acknowledgement: shown before the code entry/Start step, before EVERY transfer
+    // (no stable receiver identity yet). Separate from, and never a substitute for, the per-transfer approval.
+    @StateObject private var riskGate = RiskAckGate()
 
     var body: some Scene {
         WindowGroup {
+            Group {
+            if riskGate.state == .acknowledged || spike.running {
             VStack(alignment: .leading, spacing: 12) {
                 Text("KL-V1 peripheral spike (synthetic)").font(.headline)
                 Text("KL-\(spike.tag)").font(.system(size: 48, weight: .bold, design: .monospaced))
@@ -20,12 +28,24 @@ struct SpikeApp: App {
 #endif
                 TextField("6-digit code from the receiver", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
                 HStack {
-                    Button("Start") { spike.start(codeDigits: code); code = "" }.disabled(spike.running || code.count != 6)
+                    Button("Start") {
+                        // The acknowledgement is single use: no Start without it, and the next transfer asks again.
+                        guard riskGate.consumeForTransfer() else { return }
+                        spike.start(codeDigits: code); code = ""
+                    }.disabled(spike.running || code.count != 6)
                     Button("Stop") { spike.stop("manual") }.disabled(!spike.running)
                 }.buttonStyle(.borderedProminent)
                 ScrollView { Text(spike.log.joined(separator: "\n")).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading) }
             }
             .padding(16)
+            } else {
+                RiskAckView(gate: riskGate, onContinue: {}, onCancel: { riskGate.reset(); riskGate.evaluate() })
+            }
+            }
+            .onAppear { if riskGate.state == .notEvaluated { riskGate.evaluate() } }
+            // Back to the notice whenever the acknowledgement was used up (a transfer started) and nothing is running.
+            .onChange(of: riskGate.state) { _, new in if new == .notEvaluated && !spike.running { riskGate.evaluate() } }
+            .onChange(of: spike.running) { _, running in if !running && riskGate.state == .notEvaluated { riskGate.evaluate() } }
 #if FAULT_INJECTION
             // Test build only: keep the screen on while the app is in the foreground, and remember the
             // selected fault mode (never the code) between launches to reduce taps.

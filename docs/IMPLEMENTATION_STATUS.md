@@ -805,3 +805,26 @@ no FFI change). The notice text is a DRAFT and is not legally reviewed; nothing 
 | Text source: `res/values/risk_notice.xml` and `res/values-ko/risk_notice.xml` GENERATED from docs/RISK_NOTICE.md by `tools/check-risk-notice-strings.py` (write mode); the same script (check mode, CI job `risk-notice-strings`) verifies equality, the draft marker, the forbidden-wording rule (PC never "safe"/"verified safe"/"secure PC"/"안전함"/"검증됨" outside the verbatim, negated quotes in notice items) and the version/hash lock `risk_notice_version` | passed locally; CI result is on the PR |
 | Real-device UI test `apps/android/peripheral/ui-test-risk-ack.sh` (adb + uiautomator: unchecked start, disabled continue, enable/disable by checkbox, full notice, back clears, backgrounding clears, form hidden before acknowledgement) and `run-tests.sh device` | NOT RUN at the time of writing: the test phone was not connected to this Mac. Update this row with the result once run |
 | Release build contains no fault/test hook code (`check-no-faults-in-release.sh`) | passed locally |
+
+## Addendum 2026-11-07: risk acknowledgement screen (D023), iOS/iPadOS session
+
+Implements `docs/RISK_ACK_SCREEN_SPEC.md` as a shared package `apps/apple/KagiLinkRiskAck` (pure Swift/SwiftUI, no Rust or UIKit
+dependency, iOS 18 / macOS 14) so the macOS session can reuse the same decision logic, text resource and view. Wired into the
+KL-V1 peripheral spike (`KagiLinkPeripheralSpike`): the screen appears before the code entry/Start step, before EVERY transfer (no stable
+receiver identity exists yet, so `needsNotice` always returns true for an unknown receiver); `consumeForTransfer()` makes an
+acknowledgement single use; the per-transfer approval is untouched. No FFI signature, protocol, certificate, account or store change.
+Text is the draft from `docs/RISK_NOTICE.md` (not legally reviewed), shown with a draft banner; `RiskNotice.version = 1`.
+
+| Check | Outcome |
+|---|---|
+| `swift test` on the package (macOS host, mock storage/source) | PASS, 31 tests, 0 failures, 0 skipped: `needsNotice` (first use, same, changed receiver, bumped/older version, corrupt record, unknown identity), gate state machine (unchecked start, button enable/disable, single-use, back/reset, save failure, unreadable/corrupt storage, missing text), record fields (version, receiver hash, timestamp only), ko/en text equal to `docs/RISK_NOTICE.md`, forbidden-wording scan |
+| Package build for iOS Simulator SDK | PASS (compile only) |
+| Spike app compile for iOS 18 arm64 (device SDK, unsigned) with the package sources | PASS (compile only) |
+| UI tests | NOT RUN as XCUITest: no UI-test target exists. Button enablement is tested at view-model level (`canContinue`, bound to `.disabled`); the view itself is untested |
+| Rendering, VoiceOver, largest text, small screens, dark mode, Reduce Transparency | NOT RUN, no device or simulator run of the new screen |
+| Real iPhone run of the new screen | NOT RUN |
+
+Limits: the stored record is local `UserDefaults` (version, receiver hash when known, timestamp); no secrets, personal data or telemetry. A
+claimed receiver identity is not wired anywhere yet, so the skip path (same version and stable receiver) is exercised only by unit tests.
+The full notice contains the words "안전함"/"검증됨"/"safe"/"verified" only inside item 4, which says a device result is NOT such a
+guarantee; the test allows that item alone. No legal sufficiency is claimed.
