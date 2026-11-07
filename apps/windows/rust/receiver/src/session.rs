@@ -54,6 +54,24 @@ pub enum SessionError {
     UnexpectedMessage,
     /// The peer sent a SECRET-free or wrongly kinded channel message.
     UnexpectedKind,
+    /// The local sink refused or failed to take the received value; no RESULT was sent.
+    DeliveryRefused,
+}
+
+/// Where a received SECRET goes. The driver calls it once, with the plaintext still inside the core's
+/// zeroizing buffer; the sink must not keep the value. Returning `false` fails the attempt closed.
+pub trait SecretSink {
+    /// Take the value (for example type it into the program's own window). `true` = delivered.
+    fn deliver(&mut self, plaintext: &[u8]) -> bool;
+}
+
+/// The default sink: nothing is delivered anywhere, only the length is reported (previous behaviour).
+pub struct DiscardSink;
+
+impl SecretSink for DiscardSink {
+    fn deliver(&mut self, _plaintext: &[u8]) -> bool {
+        true
+    }
 }
 
 impl From<CoreError> for SessionError {
@@ -126,7 +144,18 @@ pub fn run_attempt<L: GattLink>(
     rx: &mut ReceiverSession,
     rng: &mut impl CryptoRng,
 ) -> Result<ReceiveReport, SessionError> {
-    let result = run_attempt_inner(link, rx, rng);
+    run_attempt_with_sink(link, rx, rng, &mut DiscardSink)
+}
+
+/// Like [`run_attempt`], but the received SECRET is handed to `sink` before the RESULT is sealed. If the
+/// sink returns `false` the channel is closed, no RESULT is sent and the attempt fails closed.
+pub fn run_attempt_with_sink<L: GattLink>(
+    link: &mut L,
+    rx: &mut ReceiverSession,
+    rng: &mut impl CryptoRng,
+    sink: &mut dyn SecretSink,
+) -> Result<ReceiveReport, SessionError> {
+    let result = run_attempt_inner(link, rx, rng, sink);
     link.disconnect();
     result
 }
@@ -135,6 +164,7 @@ fn run_attempt_inner<L: GattLink>(
     link: &mut L,
     rx: &mut ReceiverSession,
     rng: &mut impl CryptoRng,
+    sink: &mut dyn SecretSink,
 ) -> Result<ReceiveReport, SessionError> {
     let m1 = rx.begin_attempt(rng)?;
     send_message(link, MTYPE_HANDSHAKE, &m1)?;
@@ -166,6 +196,10 @@ fn run_attempt_inner<L: GattLink>(
                 if msg.kind != kind::SECRET {
                     channel.close();
                     return Err(SessionError::UnexpectedKind);
+                }
+                if !sink.deliver(&msg.plaintext) {
+                    channel.close();
+                    return Err(SessionError::DeliveryRefused);
                 }
                 break msg.plaintext.len();
             }

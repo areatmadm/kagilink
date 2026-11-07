@@ -582,3 +582,16 @@ expiry/success/exhaustion (final count), and uses the existing handle registry a
 By the existing ABI rule (any added function bumps the version, as in D027) `KL_ABI_VERSION` is now 3; the C header, C++ wrapper
 (`Receiver::failures`) and the Android spike `EXPECTED_ABI` were updated, Swift reads the header constant. No wire-format, policy or
 scope change.
+
+## D031 — Own-window input sink for the Windows receiver, 2026-11-07
+
+Owner request: show that pressing Send on the phone makes the PC react in an input box (instead of more RDP work). Implements the
+D029 position (2) ONLY for the receiver's own window; D029 itself is still not adopted, and nothing else in it changes. New crate
+`areatm-own-window-input` (all `unsafe` isolated there; the receiver library keeps `forbid(unsafe_code)`): the receiver passes the
+received SYNTHETIC value to a `SecretSink` before sealing RESULT. The own-window sink types it with `SendInput` (Unicode) into a window
+the program created, ONLY while that window is foreground and holds focus (otherwise nothing is typed), then reads its own edit box back
+to prove delivery. Refusals fail closed: no RESULT is sent (`SessionError::DeliveryRefused`), the sink is not called for any failed
+or tampered attempt. Values must be UTF-8 text of at most 128 characters without control characters. The box is masked unless
+`--show-text` is given. Honest limits: the box is ordinary window memory (cleared and destroyed, not erased); input-capable malware on the
+PC sees it; this says nothing about other windows, RDP or CredUI (unsupported, Phase 5). D012 (real-secret transfer disabled) is unchanged:
+only synthetic values are used. CLI: `fake-session|ble-receive --own-window [--show-text]`. No wire-format, policy or scope change.

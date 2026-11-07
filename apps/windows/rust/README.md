@@ -10,6 +10,9 @@ Not implemented yet: BLE (WinRT GATT), entering text into a target window, vault
 phone-side verification of TPM claims. The TPM check is a trust signal, not a security boundary, and
 KagiLink has no duty to detect malware already on the PC (D023). Synthetic data only.
 
+* `own-window-input/` - D031 sink: types a received synthetic value into a window this program creates, only while
+  that window is foreground, and reads it back. Used via `--own-window [--show-text]`.
+
 Also here: `receiver ble-ping [--seconds N]` (Rust version of the Phase 0 BLE diagnostic, fixed public
 strings, no secret) and `input-probe --send-to-own-window` (synthetic text into this program's own
 window only; needs a click on that window; never touches other windows). Neither has been verified

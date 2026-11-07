@@ -1,5 +1,5 @@
 [workspace]
-members = ["core/phase0-model", "core/cpace-eval", "core/kagilink-core", "apps/windows/rust/tpm-probe", "apps/windows/rust/receiver", "apps/windows/rust/input-probe", "core/kagilink-ffi"]
+members = ["core/phase0-model", "core/cpace-eval", "core/kagilink-core", "apps/windows/rust/tpm-probe", "apps/windows/rust/receiver", "apps/windows/rust/input-probe", "apps/windows/rust/own-window-input","core/kagilink-ffi"]
 resolver = "2"
 
 [workspace.package]

@@ -791,6 +791,16 @@ that the Windows 11 RDP credential prompt (`CredentialUIBroker`, XAML host) expo
 impossible and the harness fails closed. No input run was executed. RDP and CredUI input stays unsupported (D029 proposed, awaiting
 the owner's explicit adoption). Real-secret transfer stays disabled (D012).
 
+## Addendum 2026-11-07: own-window input sink (D031)
+
+Built and tested on Windows (host tests only): `areatm-own-window-input` crate, `SecretSink` hook in the receiver session driver
+(`run_attempt_with_sink`; `run_attempt` unchanged for existing callers), CLI flag `--own-window [--show-text]` on `fake-session` and
+`ble-receive`. Executed: cargo clippy -D warnings clean; unit tests for value validation; session tests (sink gets the secret once and
+RESULT is sent; refusing sink fails closed with no RESULT; sink never called on wrong-code, tampered M4/SECRET or dropped attempts);
+a run of `fake-session --own-window` with nobody clicking printed "NOT typed (the test window was not active)" and failed closed.
+NOT yet executed: the positive path (window active, text typed and read back) through this new code and any run with the real phone;
+the earlier `input-probe` run proved the same SendInput mechanism for an own window only. Real-secret transfer stays disabled (D012).
+
 ### Android risk acknowledgement screen (D023), Android spike — 2026-11-07
 
 Implements docs/RISK_ACK_SCREEN_SPEC.md in the Android peripheral spike (`apps/android/peripheral`, synthetic data only, D012 unchanged,
@@ -828,3 +838,12 @@ Limits: the stored record is local `UserDefaults` (version, receiver hash when k
 claimed receiver identity is not wired anywhere yet, so the skip path (same version and stable receiver) is exercised only by unit tests.
 The full notice contains the words "안전함"/"검증됨"/"safe"/"verified" only inside item 4, which says a device result is NOT such a
 guarantee; the test allows that item alone. No legal sufficiency is claimed.
+
+### D031 real-phone result, 2026-11-07 (iPhone 15 Pro normal build, Windows PC, synthetic value)
+
+`ble-receive --own-window --seconds 25 --choose 1` (one phone in range, `--choose` used only for this home test so the focus stays on the
+test window): handshake and transfer succeeded, "33 characters typed and read back from our own box", "Transfer OK: 33 bytes received".
+Earlier same-day attempts were refused safely ("NOT typed", failure budget 0/3, no RESULT) because the test window was behind other
+windows or lost focus when the row was typed in the terminal; fixes: window kept topmost without activation, taskbar flash plus an
+on-window prompt, and a 20 s wait for the user's click. Lessons: the user must click the box; typing in another window takes the foreground
+away. Not tested: Android sender, other PCs, other targets (unsupported, Phase 5). Real-secret transfer stays disabled (D012).
