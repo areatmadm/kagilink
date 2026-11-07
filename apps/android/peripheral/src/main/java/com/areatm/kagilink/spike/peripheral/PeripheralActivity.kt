@@ -34,6 +34,8 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener, TestHookHost 
     private lateinit var approveBtn: Button
     private lateinit var stopBtn: Button
     private lateinit var session: PeripheralSession
+    private lateinit var riskPanel: RiskAckPanel
+    private lateinit var startForm: LinearLayout
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -82,10 +84,15 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener, TestHookHost 
             col.addView(keepFault)
             showMode()
         }
-        col.addView(notifyBox)
-        col.addView(codeField) // directly above Start: type the code, tap Start
-        startBtn = Button(this).apply { text = "Start (advertise 60 s)"; setOnClickListener { onStartClicked() } }
-        col.addView(startBtn)
+        // Risk acknowledgement (D023) comes BEFORE the code entry / Start step; the form stays hidden until it is acknowledged.
+        riskPanel = RiskAckPanel(this) { applyRiskState() }
+        col.addView(riskPanel.view)
+        startForm = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; id = R.id.start_form }
+        startForm.addView(notifyBox)
+        startForm.addView(codeField) // directly above Start: type the code, tap Start
+        startBtn = Button(this).apply { id = R.id.start_button; text = "Start (advertise 60 s)"; setOnClickListener { onStartClicked() } }
+        startForm.addView(startBtn)
+        col.addView(startForm)
         tagView = TextView(this).apply { textSize = 48f; gravity = Gravity.CENTER; text = "----" }
         col.addView(tagView)
         approveBtn = Button(this).apply {
@@ -98,9 +105,20 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener, TestHookHost 
         statusView = TextView(this).apply { textSize = 13f; setTextIsSelectable(true) }
         col.addView(ScrollView(this).apply { addView(statusView) })
         setContentView(col)
+        riskPanel.show()
+        applyRiskState()
+        // Back from the start form returns to the notice and clears the acknowledgement; on the notice it leaves the app.
+        onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
+            if (riskPanel.gate.acknowledged) riskPanel.reset() else finish()
+        }
+    }
+
+    private fun applyRiskState() {
+        startForm.visibility = if (riskPanel.formVisible()) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun onStartClicked() {
+        if (!riskPanel.mayStartTransfer()) { riskPanel.reset(); return } // fail closed: no acknowledgement, no transfer
         val need = arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
         if (need.any { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }) {
             requestPermissions(need, 1)
@@ -135,6 +153,7 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener, TestHookHost 
             statusView.append(summary + "\n")
             if (keepFault?.isChecked != true) faultSpinner?.setSelection(0); showMode()
             startBtn.isEnabled = true; approveBtn.isEnabled = false; tagView.text = "----"
+            riskPanel.reset() // the acknowledgement is consumed by the transfer: the notice comes back before the next one
         }
     }
 
@@ -144,6 +163,9 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener, TestHookHost 
     override fun testStart(code: ByteArray, notify: Boolean, plan: FaultPlan): String? {
         val need = arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
         if (need.any { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }) return "Nearby devices permission not granted"
+        // Debug-only test automation (no such entry in release builds) drives Start without the screen:
+        // this is the one documented bypass of the risk notice, for synthetic-data harness runs only.
+        android.util.Log.i("KLV1", "risk notice bypassed by the test hook (debug build, synthetic data)")
         session.stop() // a running session ends first; the new start is queued behind it
         codeField.text.clear()
         statusView.text = ""
@@ -152,5 +174,5 @@ class PeripheralActivity : Activity(), PeripheralSession.Listener, TestHookHost 
         return null
     }
 
-    override fun onStop() { super.onStop(); session.stop() } // fail closed when backgrounded
+    override fun onStop() { super.onStop(); session.stop(); riskPanel.reset() } // fail closed when backgrounded
 }

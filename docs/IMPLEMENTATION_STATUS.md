@@ -791,6 +791,21 @@ that the Windows 11 RDP credential prompt (`CredentialUIBroker`, XAML host) expo
 impossible and the harness fails closed. No input run was executed. RDP and CredUI input stays unsupported (D029 proposed, awaiting
 the owner's explicit adoption). Real-secret transfer stays disabled (D012).
 
+### Android risk acknowledgement screen (D023), Android spike — 2026-11-07
+
+Implements docs/RISK_ACK_SCREEN_SPEC.md in the Android peripheral spike (`apps/android/peripheral`, synthetic data only, D012 unchanged,
+no FFI change). The notice text is a DRAFT and is not legally reviewed; nothing here claims legal sufficiency.
+
+| Item | Status |
+|---|---|
+| Decision function `RiskAck.needsNotice`, record format `KLRA1;version;receiverHash\|-;epoch` (decode is strict, corrupt = no record), `NoticeTexts.load` (any missing/blank text = not loaded), `AckGate` state machine (`apps/android/riskack/src`, pure Kotlin) | implemented |
+| Unit tests `apps/android/riskack/test/RiskAckTests.kt`: first use, same version+receiver, changed receiver, bumped/older version, corrupt record, unknown identity, 10 bad record encodings, every missing/blank/throwing text, gate (unchecked start, check/uncheck, continue only when enabled, reset leaves no acknowledged state, unloaded texts block transfers) | 73 checks, 0 failures on a HOST JVM (mock: not the device). Device run (`run-tests.sh device`): see below |
+| UI: notice shown before the code-entry/Start form, checkbox starts unchecked, Continue disabled until checked, full notice one tap away and scrollable, back and backgrounding and end of a transfer clear the acknowledgement, Start refuses without acknowledgement, unavailable text blocks the form | implemented; the TEST_START debug hook (debug builds only) bypasses the screen and logs `risk notice bypassed by the test hook` — documented exception for synthetic-data harness runs, absent from release builds |
+| Receiver identity: none exists yet, so `currentReceiverHash` is always null and the notice is shown before EVERY transfer; the stored record keeps version, a null receiver hash and a timestamp only (no personal data, codes, secrets or telemetry) | by design (spec rule 2) |
+| Text source: `res/values/risk_notice.xml` and `res/values-ko/risk_notice.xml` GENERATED from docs/RISK_NOTICE.md by `tools/check-risk-notice-strings.py` (write mode); the same script (check mode, CI job `risk-notice-strings`) verifies equality, the draft marker, the forbidden-wording rule (PC never "safe"/"verified safe"/"secure PC"/"안전함"/"검증됨" outside the verbatim, negated quotes in notice items) and the version/hash lock `risk_notice_version` | passed locally; CI result is on the PR |
+| Real-device UI test `apps/android/peripheral/ui-test-risk-ack.sh` (adb + uiautomator: unchecked start, disabled continue, enable/disable by checkbox, full notice, back clears, backgrounding clears, form hidden before acknowledgement) and `run-tests.sh device` | NOT RUN at the time of writing: the test phone was not connected to this Mac. Update this row with the result once run |
+| Release build contains no fault/test hook code (`check-no-faults-in-release.sh`) | passed locally |
+
 ## Addendum 2026-11-07: risk acknowledgement screen (D023), iOS/iPadOS session
 
 Implements `docs/RISK_ACK_SCREEN_SPEC.md` as a shared package `apps/apple/KagiLinkRiskAck` (pure Swift/SwiftUI, no Rust or UIKit

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notice version lock (D023). Any change of the notice text must bump risk_notice_version and update the hash;
+     tools/check-risk-notice-strings.py enforces the hash. -->
+<resources>
+    <integer name="risk_notice_version">1</integer>
+    <string name="risk_notice_text_sha256" translatable="false">5353802363376ca1d0de87e333c4ecfd361ce0a8f870bf8f027be8b1eab299da</string>
+</resources>
