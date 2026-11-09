@@ -865,3 +865,8 @@ verified. Nothing was built or tested; MCU verification (seven checks) is the ne
 ## Addendum 2026-11-09: typing token, approaches considered
 
 Added section 8 "approaches considered" to docs/HID_TYPIST_DESIGN.md (YubiKey static password, Android and iPhone Bluetooth keyboard, passkey hybrid, own RDP client, credential provider, web page, car digital keys). Documents only, search-based evidence plus the iPhone measurement already recorded. No decision, nothing built. D012 unchanged.
+
+## Addendum 2026-11-09: iPhone HID service experiment (D032)
+
+Measured by the macOS session on an iPhone 15 Pro with a throwaway test app: Core Bluetooth rejects the HID service UUID 0x1812 (`didAdd` error `uuidNotAllowed`, code 8); a custom-UUID control service works. One measurement on one OS version; MFi
+and other versions unverified; advertising packet contents not checked. Phone-as-keyboard is therefore not available on iPhone. Details in docs/HID_TYPIST_DESIGN.md section 3.3. Nothing built. D012 unchanged.
