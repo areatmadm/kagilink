@@ -79,6 +79,14 @@ language. Drafts below are NOT reviewed; each needs a native-speaker review (leg
 
 The phone asks "Is this a shared or public PC?" (no automatic detection is claimed). If yes: default 1 minute, the longer steps need the extra confirmation, and the notice is repeated at every new session.
 
+### 3.3 Measured: an iPhone app cannot publish the HID service (2026-11-09)
+
+Throwaway test app on an iPhone 15 Pro (synthetic, nothing stored, removed after the test; existing certificate and profile). `CBPeripheralManager.add` with the HID
+service 0x1812 (five characteristics) returned no exception, but `didAdd` reported `CBErrorDomain` code 8 "The specified UUID is not allowed for this operation." A control service with
+a custom UUID was accepted and advertised. Advertising with 0x1812 started without error, but the service is not in the GATT table, and whether 0x1812 was in the advertising packet was NOT checked. Result: an iPhone
+app cannot act as a Bluetooth keyboard through Core Bluetooth on this OS version (one measurement; other iOS versions and any MFi route unverified). So "the phone is the keyboard" is not available on iPhone; the USB
+token stays the only route that covers both phones. The Android API route (BluetoothHidDevice) is still an unmeasured optional experiment.
+
 ## 4. Typing: input methods and layouts (user must be told in advance)
 
 HID sends key positions (scan codes), not characters. Results depend on the PC, so the token cannot guarantee text:
