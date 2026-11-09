@@ -62,6 +62,16 @@ retry after fixing the input mode).
   confirmation failures. A new session needs a new QR.
 * Open: BLE connection stability and phone battery over long sessions; the token display countdown; the exact numbers (all are drafts).
 
+### 3.2 Shared / public PC warning (DRAFT text, owner liked the idea 2026-11-09)
+
+Shown on the phone before the session length is chosen, and again whenever the receiver changes. It selects 1 minute as the default for this case. Wording follows the
+D023 rules: it never calls a PC safe or verified. Both languages need the same review as docs/RISK_NOTICE.md before use.
+
+* KO: "PC방·공용 PC에서는 세션을 1분으로 줄이세요. 이 PC에 키로거나 화면 녹화 프로그램이 있으면 입력한 값이 노출될 수 있고, KagiLink는 이를 알아내지 못합니다. 일회용 비밀번호만 보내고, 끝나면 지우기 버튼을 누른 뒤 비밀번호를 바꾸세요."
+* EN: "On internet cafe or shared PCs, shorten the session to 1 minute. If this PC has a keylogger or screen recorder, the typed value can be exposed and KagiLink cannot tell. Send only one-time passwords, press the wipe button when finished, and change the password afterwards."
+
+The phone asks "Is this a shared or public PC?" (no automatic detection is claimed). If yes: default 1 minute, the longer steps need the extra confirmation, and the notice is repeated at every new session.
+
 ## 4. Typing: input methods and layouts (user must be told in advance)
 
 HID sends key positions (scan codes), not characters. Results depend on the PC, so the token cannot guarantee text:
