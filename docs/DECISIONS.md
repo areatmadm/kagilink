@@ -619,3 +619,15 @@ token button. Details and open items: docs/HID_TYPIST_DESIGN.md sections 3 and 3
 the exact numbers, the display part, the chip. Ideas taken from cross-device passkeys are only the QR hand-off and BLE proximity; accounts, cloud relays and long-term pairing are rejected
 (research 2026-11-09: that flow needs internet and Bluetooth on both devices). Phone-as-Bluetooth-keyboard is a separate optional experiment (Android API exists since Android 9; iOS and
 Windows sign-in behaviour unverified).
+
+## D033 — Keep researching RDP credential-prompt input, evidence first, 2026-11-09 (owner decision)
+
+Owner decision (stated in chat 2026-11-09, option 1): RDP login input stays an open Phase 5 research item. Background: the Windows 11 mstsc credential prompt
+("Credential Dialog Xaml Host", owned by CredentialUIBroker) exposes no UI Automation child elements, measured on the isolated test VM (2026-11-07) and again read-only on the
+academy PC against a real mstsc session (2026-11-09; zero descendants, no edit, no button, IsPassword not observable). This is not a reason to drop the project; it is the
+AGENTS.md rule "RDP input requires feasibility evidence first; unsupported or blocked input must fail".
+
+Policy: feasibility evidence is sought by means other than UIA, in lawful test environments only. Real-secret transfer stays disabled (D012) until evidence exists. Methods
+forbidden by AGENTS.md stay forbidden: UIPI/UAC bypass, secure-desktop access, privilege escalation, drivers, services, clipboard, security disabling. D029 is unchanged and still
+not adopted. D031 (own-window sink) and D032 (typing token, design only) are unchanged. The own-RDP-client approach is one candidate among several, not a priority
+(docs/RDP_CLIENT_DEPENDENCY_REVIEW.md).

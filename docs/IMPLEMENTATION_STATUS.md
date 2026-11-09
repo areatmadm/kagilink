@@ -875,3 +875,11 @@ and other versions unverified; advertising packet contents not checked. Phone-as
 
 docs/RDP_CLIENT_DEPENDENCY_REVIEW.md records a search-based first pass on IronRDP and FreeRDP (license, NLA, Unicode keyboard events,
 advisories). Many items are UNVERIFIED and must be checked on official sources before any selection. Nothing selected or built; D012 and D029 unchanged.
+
+## Addendum 2026-11-09: RDP credential prompt re-examined on the academy PC (D033)
+
+Read-only probe by the academy Windows session (no clicks, keys or input; nothing closed): the client was mstsc.exe; the prompt was the foreground window of class "Credential Dialog Xaml Host"
+owned by CredentialUIBroker.exe; UI Automation returned zero descendant elements, so no edit control, button or IsPassword value is observable (same result as the 2026-11-07 test VM).
+Consequence: the harness precondition "a password edit is focused" cannot be checked on this prompt, so no input is sent by the harness. A local-only input check (synthetic letters, no Enter,
+masked-field dot count by screenshot) was requested from the academy session; it is NOT recorded here because no result has been received. Server-side logon evidence was not collected and no
+login attempt was made. The proposed -AllowedNetwork harness change was discarded unpushed. D033 records the owner's decision to keep researching; D012 unchanged.
