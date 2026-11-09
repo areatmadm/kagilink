@@ -70,6 +70,13 @@ D023 rules: it never calls a PC safe or verified. Both languages need the same r
 * KO: "PC방·공용 PC에서는 세션을 1분으로 줄이세요. 이 PC에 키로거나 화면 녹화 프로그램이 있으면 입력한 값이 노출될 수 있고, KagiLink는 이를 알아내지 못합니다. 일회용 비밀번호만 보내고, 끝나면 지우기 버튼을 누른 뒤 비밀번호를 바꾸세요."
 * EN: "On internet cafe or shared PCs, shorten the session to 1 minute. If this PC has a keylogger or screen recorder, the typed value can be exposed and KagiLink cannot tell. Send only one-time passwords, press the wipe button when finished, and change the password afterwards."
 
+Venue wording is localized so it is recognized at once, and the generic words "shared or public PC" (internet cafe, library, hotel business centre, school lab) stay in every
+language. Drafts below are NOT reviewed; each needs a native-speaker review (legal tone, no "safe"/"verified" for a PC) before use. Traditional Chinese (Taiwan, Hong Kong) is separate and not drafted.
+
+* JA (ネットカフェ): "ネットカフェや共用PCでは、セッションを1分に短縮してください。このPCにキーロガーや画面録画ソフトがあると、入力した値が漏れる可能性があり、KagiLinkはそれを検知できません。使い捨てのパスワードだけを送り、終わったら消去ボタンを押し、あとでパスワードを変更してください。"
+* ZH-CN (网吧): "在网吧或公共电脑上，请把会话缩短为1分钟。如果这台电脑上有键盘记录器或录屏软件，输入的内容可能泄露，KagiLink 无法检测。请只发送一次性密码，完成后按清除键，并在事后更换密码。"
+* VI (quán net): "Trên máy ở quán net hoặc máy dùng chung, hãy rút ngắn phiên xuống 1 phút. Nếu máy này có phần mềm ghi phím hoặc quay màn hình, giá trị được gõ có thể bị lộ và KagiLink không thể phát hiện điều đó. Chỉ gửi mật khẩu dùng một lần, nhấn nút xóa khi xong và đổi mật khẩu sau đó."
+
 The phone asks "Is this a shared or public PC?" (no automatic detection is claimed). If yes: default 1 minute, the longer steps need the extra confirmation, and the notice is repeated at every new session.
 
 ## 4. Typing: input methods and layouts (user must be told in advance)
