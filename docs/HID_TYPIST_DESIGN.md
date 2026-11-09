@@ -128,3 +128,25 @@ Checks, each with recorded evidence (no check is assumed to pass):
 7. Cost of a complete unit (board, display, button, case) from real purchase quotes.
 
 Exit criterion for the next phase: all seven recorded, results reviewed by the owner, then a new decision.
+
+## 8. Reference: approaches considered (2026-11-09, owner will keep weighing several)
+
+Evidence quality: web surveys by a low-effort model (search based, official pages not always readable) plus one device measurement. Nothing here is a decision.
+
+| Approach | Covers | Result so far |
+|---|---|---|
+| USB token, RAM-only typist (this note) | any PC and prompt, public PCs, login/UAC, RDP prompt, web | design only; hardware verification (section 7) not done |
+| YubiKey 5 static password slot | typing on touch | not usable as designed: the value is written into the key at configuration time and stays there; no value chosen at touch time (vendor SDK docs) |
+| Phone as Bluetooth HID keyboard, Android (`BluetoothHidDevice`, Android 9+) | any PC that accepts the pairing | API exists; one app at a time; needs a prior OS pairing (a bonded keyboard can send ANY key, a larger risk than this protocol); Windows sign-in screen behaviour unverified; not measured on a device |
+| Phone as Bluetooth HID keyboard, iPhone | none | measured: Core Bluetooth rejects service 0x1812 (`uuidNotAllowed`, one iPhone 15 Pro, one OS version) |
+| Cross-device passkey (hybrid/PXP) | passkey sites only | needs internet and Bluetooth on both devices (vendor docs); conflicts with the offline, no-account rule; not a password-prompt replacement |
+| Own RDP client with the credentials passed in memory (for example a Rust library such as IronRDP, MIT or Apache-2.0, claims NLA support) | RDP only | not reviewed or tried; maintenance, audit and password-handling questions open; would also need AGENTS.md dependency review; login success is a protocol result, not a guess |
+| Windows credential provider (system component) | sign-in and UAC | conflicts with the no drivers, services or secure-desktop rule; not pursued |
+| Web page using Web Bluetooth | our own page only | cannot fill other sites' fields (same-origin rule of browsers); a browser extension could, on personal PCs only; not studied |
+| Car-style digital key ideas (SOCAR, Apple CarKey, CCC Digital Key) | design inspiration | one-time password then PAKE channel is the same family as our protocol; long-lived keys in a secure chip and UWB distance bounding are NOT adopted; how SOCAR registers its controller in the OS list is undocumented |
+
+Notes for the design:
+
+* Phone side: avoid OS-level bonding with the token. Do not touch characteristics that require encryption at the OS layer; our own CPace and AES-GCM channel is the protection. Do not use accessory-registration frameworks that leave a persistent entry; a user must be able to remove anything at any time (no "locked until return" behaviour). Whether an ordinary app can prevent "Forget this device" is not documented.
+* A bonded keyboard of any kind is a bigger trust grant than a one-shot token: the token firmware types printable characters only (no Enter, Tab or shortcuts) and holds no secret.
+* Layered plan under discussion: the token for universal coverage, service-specific direct authentication (RDP client) where login success can be proven, and an optional Android pairing mode with explicit warnings.
