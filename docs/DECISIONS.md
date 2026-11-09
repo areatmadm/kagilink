@@ -595,3 +595,18 @@ or tampered attempt. Values must be UTF-8 text of at most 128 characters without
 `--show-text` is given. Honest limits: the box is ordinary window memory (cleared and destroyed, not erased); input-capable malware on the
 PC sees it; this says nothing about other windows, RDP or CredUI (unsupported, Phase 5). D012 (real-secret transfer disabled) is unchanged:
 only synthetic values are used. CLI: `fake-session|ble-receive --own-window [--show-text]`. No wire-format, policy or scope change.
+
+## D032 — Optional RAM-only typing token (USB HID), 2026-11-09 (owner-approved scope expansion, design only)
+
+Owner (2026-11-09): the original plan was a physical password-typing device; the owner approves adding it to scope despite the AGENTS.md line
+"hardware protects keys, not arbitrary password strings" and accepts that Bluetooth devices may be refused by a company security team
+(company policy always wins; if a company forbids it the device is not used there). Motivation: Phase 5 showed software input cannot reach the Windows 11
+RDP credential prompt (XAML host, no UI Automation elements, UIPI/secure desktop); a real USB keyboard is an ordinary input device.
+Decision: record the design in docs/HID_TYPIST_DESIGN.md and a plain-language reviewer brief in docs/HID_TYPIST_COMPANY_BRIEF.md (both DRAFT). The
+token is the logical receiver (same CPace/confirmation/TTL/failure rules), keeps the value in RAM only, types it on an explicit button press
+and zeroizes it; it never stores a secret and needs no PC software, drivers or admin rights. Differences from a YubiKey static-password slot
+(written at configuration time, stored in the key) are intentional. NOT decided and NOT built: how the one-time code is shown (design note
+section 3, owner decision needed), the chip (ESP32-S3 first candidate, unverified), firmware, case, cost. Required before any build: the seven-point MCU
+verification in the design note, recorded with evidence, then a new owner decision. IME/layout problems (Korean, Japanese kana/kanji, Chinese,
+layouts, Caps Lock) must be explained to the user in advance; no claim that the typed text equals the intended text. D029 clause (5) is
+unaffected: this is a physical input device, not a software workaround of secure-desktop or UIPI rules. D012 (real-secret transfer disabled) is unchanged.

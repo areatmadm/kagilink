@@ -108,6 +108,11 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
 - Windows RDP input requires feasibility evidence first. Unsupported/blocked
   input must fail. Do not enable real-secret transfer until safe target input
   is demonstrated. Queued keystrokes are not proof of delivery or RDP login.
+- Optional RAM-only typing token (D032, owner-approved scope expansion 2026-11-09, design stage,
+  docs/HID_TYPIST_DESIGN.md): a user-owned USB-HID keyboard device that receives one value over the
+  same protocol, keeps it in RAM only, types it on a button press and zeroizes it. All rules above
+  still apply; it never stores a secret, needs no PC-side software, and nothing is built until the
+  MCU study in the design note is recorded and the owner decides. Companies' own security policy wins.
 - Warn that compromised receiving computers can expose decrypted credentials. Before the first
   transfer to a receiver (and whenever the receiver changes) the sending app must show the short
   notice from docs/RISK_NOTICE.md and require explicit acknowledgment (D023). No UI may call a PC

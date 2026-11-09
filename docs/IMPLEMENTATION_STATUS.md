@@ -855,3 +855,9 @@ TPM state (claim) `Present { attestation: Produced }`, Secure Boot enabled (regi
 `ble-receive --own-window --seconds 25 --choose 1`: tag KL-R2JZ (signal Weak), "33 characters typed and read back from our own box",
 failure budget 0/3, "Transfer OK: 33 bytes received in 1 fragments". Second PC and second Bluetooth adapter, same result as the lead PC
 run. Still untested: Android sender, a TPM-less PC (RAM-only path on real hardware), other targets (unsupported, Phase 5). D012 unchanged.
+
+## Addendum 2026-11-09: typing-token design opened (D032)
+
+Documents only: docs/HID_TYPIST_DESIGN.md, docs/HID_TYPIST_COMPANY_BRIEF.md (both DRAFT), D032, one scope bullet in AGENTS.md. Evidence base: a low-effort web
+survey (YubiKey 5 static-password behaviour, existing open-source password typers, candidate MCUs). It was search-based; chip data sheets and prices were not
+verified. Nothing was built or tested; MCU verification (seven checks) is the next gate. RDP/CredUI input stays unsupported (D029 proposed). D012 unchanged.
