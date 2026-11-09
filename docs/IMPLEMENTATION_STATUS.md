@@ -870,3 +870,8 @@ Added section 8 "approaches considered" to docs/HID_TYPIST_DESIGN.md (YubiKey st
 
 Measured by the macOS session on an iPhone 15 Pro with a throwaway test app: Core Bluetooth rejects the HID service UUID 0x1812 (`didAdd` error `uuidNotAllowed`, code 8); a custom-UUID control service works. One measurement on one OS version; MFi
 and other versions unverified; advertising packet contents not checked. Phone-as-keyboard is therefore not available on iPhone. Details in docs/HID_TYPIST_DESIGN.md section 3.3. Nothing built. D012 unchanged.
+
+## Addendum 2026-11-09: own RDP client dependency review (draft, no decision)
+
+docs/RDP_CLIENT_DEPENDENCY_REVIEW.md records a search-based first pass on IronRDP and FreeRDP (license, NLA, Unicode keyboard events,
+advisories). Many items are UNVERIFIED and must be checked on official sources before any selection. Nothing selected or built; D012 and D029 unchanged.
