@@ -610,3 +610,12 @@ section 3, owner decision needed), the chip (ESP32-S3 first candidate, unverifie
 verification in the design note, recorded with evidence, then a new owner decision. IME/layout problems (Korean, Japanese kana/kanji, Chinese,
 layouts, Caps Lock) must be explained to the user in advance; no claim that the typed text equals the intended text. D029 clause (5) is
 unaffected: this is a physical input device, not a software workaround of secure-desktop or UIPI rules. D012 (real-secret transfer disabled) is unchanged.
+
+### D032 refinement 2026-11-09 (proposed, owner steering, nothing built)
+
+Owner direction: show a high-entropy one-time secret as a QR on a small token display (instead of six digits; the phone scans it and connects only to that token), keep the
+session open for a limited window after the scan: default 5 minutes, selectable steps, absolute firmware cap of 30 minutes, idle timeout, at most three values, per-value phone approval and
+token button. Details and open items: docs/HID_TYPIST_DESIGN.md sections 3 and 3.1. Not decided or changed: docs/PROTOCOL.md (a matching change needs its own approval),
+the exact numbers, the display part, the chip. Ideas taken from cross-device passkeys are only the QR hand-off and BLE proximity; accounts, cloud relays and long-term pairing are rejected
+(research 2026-11-09: that flow needs internet and Bluetooth on both devices). Phone-as-Bluetooth-keyboard is a separate optional experiment (Android API exists since Android 9; iOS and
+Windows sign-in behaviour unverified).

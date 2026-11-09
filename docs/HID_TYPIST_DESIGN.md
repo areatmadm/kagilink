@@ -32,15 +32,52 @@ phone (sender) --BLE, CPace+HMAC confirm+HKDF+AES-256-GCM--> token --USB HID key
   approval. No transfer without both. A typed value consumes the permission.
 * The token types over HID only. No USB storage, no serial, no network, no drivers on the PC, no admin rights.
 
-## 3. Open design question: showing the one-time code
+## 3. Showing the one-time secret: QR on a small display (PROPOSED, owner steering 2026-11-09)
 
-The code must be shown to the user by the logical receiver (AGENTS.md: do not silently reverse roles). A bare token has no screen.
-Options, owner decision needed before any build:
+The code must be shown by the logical receiver (AGENTS.md: do not silently reverse roles). Direction chosen with the owner, inspired by the
+proximity idea of cross-device passkeys but WITHOUT accounts, cloud or relay servers:
 
-1. A tiny OLED/e-paper display on the token (recommended; few components, nothing on the PC).
-2. The token types the 6-digit code into a focused field on request. Rejected as default: puts the code on the PC screen and in
-   any logger (it is short-lived, but the PC is the untrusted side).
-3. The phone shows the code and the user enters it on the token (needs a keypad). More hardware, more error.
+* The token shows a QR on a small display (a 128x64-class monochrome panel is expected to fit a small QR; this must be verified). The QR carries a
+  high-entropy one-time secret, the token's tag and the session length chosen on the phone. The phone scans it (camera stays local), then connects
+  only to that token over BLE. This replaces typing six digits and also replaces the human tag comparison of D026 for this path.
+* The protocol stays CPace with HMAC confirmation, HKDF and AES-256-GCM; the one-time secret simply replaces the six-digit PAKE password (higher
+  entropy, never weaker). The QR is valid for 60 seconds and once; three confirmation failures discard it. docs/PROTOCOL.md would need a matching,
+  separately approved change; it is NOT changed here.
+* Rejected for now: a long-term pairing between phone and token (a stored key on the token breaks "stores no secret", needs secure boot and flash
+  encryption to resist cloning, and conflicts with the no-reuse rules). Typing the code on the PC is the fallback only if no display is possible.
+
+### 3.1 Session window (PROPOSED)
+
+After the QR is scanned the session stays open for a limited time so several values can be sent without scanning again (user name then password,
+retry after fixing the input mode).
+
+* Default 5 minutes. Selectable fixed steps (for example 1, 5, 10, 30 minutes); no free input. The chosen length is in the QR, so the phone cannot
+  extend it later. The token enforces an absolute cap of 30 minutes in firmware and refuses anything longer.
+* Idle timeout (default 2 minutes without a transfer) ends the session early, whatever time is left.
+* At most 3 values per session. EVERY value needs the phone approval and the token button; one approval consumes one value. Nothing is typed
+  without both.
+* Lengths above 5 minutes show a warning on the phone ("a longer session means longer exposure") and need one extra confirmation on the token. A
+  change of receiver resets the length to 5 minutes. Shared or public PCs: the notice recommends 1 minute.
+* The session ends, session keys and any held value are zeroized, on disconnect, timeout, idle timeout, the wipe button, power loss or three
+  confirmation failures. A new session needs a new QR.
+* Open: BLE connection stability and phone battery over long sessions; the token display countdown; the exact numbers (all are drafts).
+
+### 3.2 Shared / public PC warning (DRAFT text, owner liked the idea 2026-11-09)
+
+Shown on the phone before the session length is chosen, and again whenever the receiver changes. It selects 1 minute as the default for this case. Wording follows the
+D023 rules: it never calls a PC safe or verified. Both languages need the same review as docs/RISK_NOTICE.md before use.
+
+* KO: "PC방·공용 PC에서는 세션을 1분으로 줄이세요. 이 PC에 키로거나 화면 녹화 프로그램이 있으면 입력한 값이 노출될 수 있고, KagiLink는 이를 알아내지 못합니다. 일회용 비밀번호만 보내고, 끝나면 지우기 버튼을 누른 뒤 비밀번호를 바꾸세요."
+* EN: "On internet cafe (PC bang) PCs or any other shared PC, shorten the session to 1 minute. If this PC has a keylogger or screen recorder, the typed value can be exposed and KagiLink cannot tell. Send only one-time passwords, press the wipe button when finished, and change the password afterwards."
+
+Venue wording is localized so it is recognized at once, and the generic words "shared or public PC" (internet cafe, library, hotel business centre, school lab) stay in every
+language. Drafts below are NOT reviewed; each needs a native-speaker review (legal tone, no "safe"/"verified" for a PC) before use. Traditional Chinese (Taiwan, Hong Kong) is separate and not drafted.
+
+* JA (ネットカフェ): "ネットカフェや共用PCでは、セッションを1分に短縮してください。このPCにキーロガーや画面録画ソフトがあると、入力した値が漏れる可能性があり、KagiLinkはそれを検知できません。使い捨てのパスワードだけを送り、終わったら消去ボタンを押し、あとでパスワードを変更してください。"
+* ZH-CN (网吧): "在网吧或公共电脑上，请把会话缩短为1分钟。如果这台电脑上有键盘记录器或录屏软件，输入的内容可能泄露，KagiLink 无法检测。请只发送一次性密码，完成后按清除键，并在事后更换密码。"
+* VI (quán net): "Trên máy ở quán net hoặc máy dùng chung, hãy rút ngắn phiên xuống 1 phút. Nếu máy này có phần mềm ghi phím hoặc quay màn hình, giá trị được gõ có thể bị lộ và KagiLink không thể phát hiện điều đó. Chỉ gửi mật khẩu dùng một lần, nhấn nút xóa khi xong và đổi mật khẩu sau đó."
+
+The phone asks "Is this a shared or public PC?" (no automatic detection is claimed). If yes: default 1 minute, the longer steps need the extra confirmation, and the notice is repeated at every new session.
 
 ## 4. Typing: input methods and layouts (user must be told in advance)
 
