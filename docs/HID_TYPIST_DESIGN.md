@@ -68,7 +68,7 @@ Shown on the phone before the session length is chosen, and again whenever the r
 D023 rules: it never calls a PC safe or verified. Both languages need the same review as docs/RISK_NOTICE.md before use.
 
 * KO: "PC방·공용 PC에서는 세션을 1분으로 줄이세요. 이 PC에 키로거나 화면 녹화 프로그램이 있으면 입력한 값이 노출될 수 있고, KagiLink는 이를 알아내지 못합니다. 일회용 비밀번호만 보내고, 끝나면 지우기 버튼을 누른 뒤 비밀번호를 바꾸세요."
-* EN: "On internet cafe or shared PCs, shorten the session to 1 minute. If this PC has a keylogger or screen recorder, the typed value can be exposed and KagiLink cannot tell. Send only one-time passwords, press the wipe button when finished, and change the password afterwards."
+* EN: "On internet cafe (PC bang) PCs or any other shared PC, shorten the session to 1 minute. If this PC has a keylogger or screen recorder, the typed value can be exposed and KagiLink cannot tell. Send only one-time passwords, press the wipe button when finished, and change the password afterwards."
 
 Venue wording is localized so it is recognized at once, and the generic words "shared or public PC" (internet cafe, library, hotel business centre, school lab) stay in every
 language. Drafts below are NOT reviewed; each needs a native-speaker review (legal tone, no "safe"/"verified" for a PC) before use. Traditional Chinese (Taiwan, Hong Kong) is separate and not drafted.
