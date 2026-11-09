@@ -32,15 +32,35 @@ phone (sender) --BLE, CPace+HMAC confirm+HKDF+AES-256-GCM--> token --USB HID key
   approval. No transfer without both. A typed value consumes the permission.
 * The token types over HID only. No USB storage, no serial, no network, no drivers on the PC, no admin rights.
 
-## 3. Open design question: showing the one-time code
+## 3. Showing the one-time secret: QR on a small display (PROPOSED, owner steering 2026-11-09)
 
-The code must be shown to the user by the logical receiver (AGENTS.md: do not silently reverse roles). A bare token has no screen.
-Options, owner decision needed before any build:
+The code must be shown by the logical receiver (AGENTS.md: do not silently reverse roles). Direction chosen with the owner, inspired by the
+proximity idea of cross-device passkeys but WITHOUT accounts, cloud or relay servers:
 
-1. A tiny OLED/e-paper display on the token (recommended; few components, nothing on the PC).
-2. The token types the 6-digit code into a focused field on request. Rejected as default: puts the code on the PC screen and in
-   any logger (it is short-lived, but the PC is the untrusted side).
-3. The phone shows the code and the user enters it on the token (needs a keypad). More hardware, more error.
+* The token shows a QR on a small display (a 128x64-class monochrome panel is expected to fit a small QR; this must be verified). The QR carries a
+  high-entropy one-time secret, the token's tag and the session length chosen on the phone. The phone scans it (camera stays local), then connects
+  only to that token over BLE. This replaces typing six digits and also replaces the human tag comparison of D026 for this path.
+* The protocol stays CPace with HMAC confirmation, HKDF and AES-256-GCM; the one-time secret simply replaces the six-digit PAKE password (higher
+  entropy, never weaker). The QR is valid for 60 seconds and once; three confirmation failures discard it. docs/PROTOCOL.md would need a matching,
+  separately approved change; it is NOT changed here.
+* Rejected for now: a long-term pairing between phone and token (a stored key on the token breaks "stores no secret", needs secure boot and flash
+  encryption to resist cloning, and conflicts with the no-reuse rules). Typing the code on the PC is the fallback only if no display is possible.
+
+### 3.1 Session window (PROPOSED)
+
+After the QR is scanned the session stays open for a limited time so several values can be sent without scanning again (user name then password,
+retry after fixing the input mode).
+
+* Default 5 minutes. Selectable fixed steps (for example 1, 5, 10, 30 minutes); no free input. The chosen length is in the QR, so the phone cannot
+  extend it later. The token enforces an absolute cap of 30 minutes in firmware and refuses anything longer.
+* Idle timeout (default 2 minutes without a transfer) ends the session early, whatever time is left.
+* At most 3 values per session. EVERY value needs the phone approval and the token button; one approval consumes one value. Nothing is typed
+  without both.
+* Lengths above 5 minutes show a warning on the phone ("a longer session means longer exposure") and need one extra confirmation on the token. A
+  change of receiver resets the length to 5 minutes. Shared or public PCs: the notice recommends 1 minute.
+* The session ends, session keys and any held value are zeroized, on disconnect, timeout, idle timeout, the wipe button, power loss or three
+  confirmation failures. A new session needs a new QR.
+* Open: BLE connection stability and phone battery over long sessions; the token display countdown; the exact numbers (all are drafts).
 
 ## 4. Typing: input methods and layouts (user must be told in advance)
 
