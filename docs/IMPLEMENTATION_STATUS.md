@@ -847,3 +847,11 @@ Earlier same-day attempts were refused safely ("NOT typed", failure budget 0/3, 
 windows or lost focus when the row was typed in the terminal; fixes: window kept topmost without activation, taskbar flash plus an
 on-window prompt, and a 20 s wait for the user's click. Lessons: the user must click the box; typing in another window takes the foreground
 away. Not tested: Android sender, other PCs, other targets (unsupported, Phase 5). Real-secret transfer stays disabled (D012).
+
+### D031 second PC result, 2026-11-09 (academy Windows PC, iPhone normal build, synthetic value)
+
+Reported by the academy Windows session on main `ae8bf00` (release build, normal user, owner typed YES and drove the phone): `check` printed
+TPM state (claim) `Present { attestation: Produced }`, Secure Boot enabled (registry claim, shown only), not elevated, decision PROCEED.
+`ble-receive --own-window --seconds 25 --choose 1`: tag KL-R2JZ (signal Weak), "33 characters typed and read back from our own box",
+failure budget 0/3, "Transfer OK: 33 bytes received in 1 fragments". Second PC and second Bluetooth adapter, same result as the lead PC
+run. Still untested: Android sender, a TPM-less PC (RAM-only path on real hardware), other targets (unsupported, Phase 5). D012 unchanged.
