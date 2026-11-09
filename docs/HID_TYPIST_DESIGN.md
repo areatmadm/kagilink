@@ -11,6 +11,10 @@ that exposes no UI Automation elements, and UIPI/secure-desktop rules block inje
 ordinary input device that Windows accepts at the credential prompt, the lock screen and UAC. The token is a small, cheap,
 user-owned device that acts as that keyboard for ONE value that the user just sent from the phone.
 
+The phone stays the main device (the "key body"): it keeps the app-specific encrypted vault (its key protected by Secure Enclave or StrongBox, so
+hardware protects the KEY, not the password string), chooses the value and approves each transfer. The token is only a typing peripheral with no
+stored secret; losing the token loses nothing, losing the phone follows the device-loss guidance (delete the vault, change the passwords).
+
 Not a YubiKey replacement: YubiKey static-password slots store the password permanently in the key (research note 2026-11-09:
 write at configuration time, typed on touch; no runtime value). This token never stores a secret.
 
