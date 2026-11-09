@@ -862,6 +862,10 @@ Documents only: docs/HID_TYPIST_DESIGN.md, docs/HID_TYPIST_COMPANY_BRIEF.md (bot
 survey (YubiKey 5 static-password behaviour, existing open-source password typers, candidate MCUs). It was search-based; chip data sheets and prices were not
 verified. Nothing was built or tested; MCU verification (seven checks) is the next gate. RDP/CredUI input stays unsupported (D029 proposed). D012 unchanged.
 
+## Addendum 2026-11-09: typing token, approaches considered
+
+Added section 8 "approaches considered" to docs/HID_TYPIST_DESIGN.md (YubiKey static password, Android and iPhone Bluetooth keyboard, passkey hybrid, own RDP client, credential provider, web page, car digital keys). Documents only, search-based evidence plus the iPhone measurement already recorded. No decision, nothing built. D012 unchanged.
+
 ## Addendum 2026-11-09: iPhone HID service experiment (D032)
 
 Measured by the macOS session on an iPhone 15 Pro with a throwaway test app: Core Bluetooth rejects the HID service UUID 0x1812 (`didAdd` error `uuidNotAllowed`, code 8); a custom-UUID control service works. One measurement on one OS version; MFi
