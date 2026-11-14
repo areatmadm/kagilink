@@ -1,7 +1,7 @@
 # KagiLink (카기링크)
 
 KagiLink는 사용자가 승인한 비밀 문자열을 가까운 컴퓨터에 완전 오프라인 BLE로
-일회성 암호화 전달하는 AreaTM의 Apache-2.0 오픈소스 프로젝트입니다.
+일회성 암호화 전달하는 Heon의 Apache-2.0 오픈소스 프로젝트입니다. AreaTM은 앱 스토어·구글 플레이 업로드 대행만 맡습니다.
 공식 사이트: https://key.minori.in. [공개 저장소](https://github.com/areatmadm/kagilink).
 
 **현재: Phase 0 연구용. 실제 비밀번호 전송, 저장소, PAKE, 제품용 BLE 전송 및 RDP
