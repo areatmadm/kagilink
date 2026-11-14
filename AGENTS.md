@@ -6,7 +6,7 @@ changes. Record design changes in docs/DECISIONS.md and evidence in the status f
 
 ## Product identity and continuity
 
-- Official product: KagiLink (카기링크), developed and distributed by AreaTM.
+- Official product: KagiLink (카기링크), developed by Heon; AreaTM only handles App Store and Google Play upload on the developer's behalf.
 - Public source: https://github.com/areatmadm/kagilink.
 - Private AI memory: areatmadm/kagilink-ai-memory, independently cloned at shared/ai/.
 - Website: https://key.minori.in; license Apache-2.0; current stage remains Phase 0.
